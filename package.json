@@ -1,0 +1,14 @@
+{
+  "name": "pickagent",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lee logs locales de uso y abre el veredicto de pickagent sin subir el perfil.",
+  "type": "module",
+  "bin": {
+    "pickagent": "dist/cli.js"
+  },
+  "files": ["dist/cli.js", "README.md"],
+  "engines": {
+    "node": ">=20"
+  }
+}
