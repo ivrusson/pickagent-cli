@@ -77,10 +77,15 @@ function waitFromReset(at: number, resetsSec: number): number | null {
   return hours;
 }
 
-function hitFromLimits(limits: Dict, at: number): LimitHit | null {
+/** A hit plus the window it belongs to: events in one window share resets_at. */
+function hitFromLimits(
+  limits: Dict,
+  at: number,
+): { hit: LimitHit; window: string | null } | null {
   const reached = limits.rate_limit_reached_type;
   if (typeof reached !== "string" || reached.length === 0) return null;
   let resets: number | null = null;
+  let windowKey: string | null = null;
   for (const key of ["primary", "secondary"]) {
     const window = limits[key];
     if (
@@ -89,16 +94,21 @@ function hitFromLimits(limits: Dict, at: number): LimitHit | null {
       Number.isFinite(window.resets_at)
     ) {
       resets = window.resets_at;
+      windowKey = `${key}:${resets}`;
       break;
     }
   }
-  return { at, waitHours: resets == null ? null : waitFromReset(at, resets) };
+  return {
+    hit: { at, waitHours: resets == null ? null : waitFromReset(at, resets) },
+    window: windowKey,
+  };
 }
 
 function takeLine(
   line: string,
   state: { model: string },
   agg: UsageAggregate,
+  windows: Set<string>,
   session: string,
   bounds: { start: number; end: number },
   offsetMinutes: number,
@@ -135,14 +145,26 @@ function takeLine(
     addUsage(agg, { session, at, model, tokens }, offsetMinutes);
   }
   if (isDict(row.payload.rate_limits)) {
-    const hit = hitFromLimits(row.payload.rate_limits, at);
-    if (hit && !agg.hits.some((prev) => prev.at === hit.at)) agg.hits.push(hit);
+    const found = hitFromLimits(row.payload.rate_limits, at);
+    if (found) {
+      // One hit per window: later token_count events repeat the reached state.
+      const { hit, window } = found;
+      const repeated =
+        window != null
+          ? windows.has(window)
+          : agg.hits.some((prev) => prev.at === hit.at);
+      if (!repeated) {
+        if (window != null) windows.add(window);
+        agg.hits.push(hit);
+      }
+    }
   }
 }
 
 async function readRollout(
   file: string,
   agg: UsageAggregate,
+  windows: Set<string>,
   bounds: { start: number; end: number },
   offsetMinutes: number,
 ) {
@@ -169,7 +191,7 @@ async function readRollout(
         }
         continue;
       }
-      takeLine(line, state, agg, session, bounds, offsetMinutes);
+      takeLine(line, state, agg, windows, session, bounds, offsetMinutes);
     }
   } catch {
     // Skip an unreadable rollout. The path is not reported.
@@ -211,9 +233,10 @@ export async function readCodexLogs(
   offsetMinutes: number,
 ): Promise<UsageAggregate> {
   const agg = createAggregate();
+  const windows = new Set<string>();
   for (const sub of ["sessions", "archived_sessions"]) {
     await walkRollouts(join(home, sub), 0, (file) =>
-      readRollout(file, agg, bounds, offsetMinutes),
+      readRollout(file, agg, windows, bounds, offsetMinutes),
     );
   }
   return agg;

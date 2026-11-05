@@ -108,8 +108,15 @@ function takeLine(
   if (Number.isNaN(at) || at < bounds.start || at >= bounds.end) return;
 
   if (row.error === "rate_limit") {
+    // A resumed session replays the same row: count each message id once.
+    const hitId = typeof row.message.id === "string" ? row.message.id : "";
+    const hitKey = hitId ? hashKey(`limit:${hitId}`) : "";
+    if (hitKey && seen.has(hitKey)) return;
     const hit = classifyUsageLimit(firstText(row.message), at);
-    if (hit && !agg.hits.some((prev) => prev.at === hit.at)) agg.hits.push(hit);
+    if (hit && !agg.hits.some((prev) => prev.at === hit.at)) {
+      if (hitKey) seen.add(hitKey);
+      agg.hits.push(hit);
+    }
     return;
   }
 
