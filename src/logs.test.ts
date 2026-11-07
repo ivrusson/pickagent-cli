@@ -329,3 +329,42 @@ test("ccusage JSON drops paths before it becomes a profile", () => {
     assert.equal(encoded.includes(secret), false, secret);
   }
 });
+
+test("fallback jsonl folds claude-fable-* into claude-fable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pickagent-fable-"));
+  const dir = join(root, "projects", SECRET_DIR);
+  await mkdir(dir, { recursive: true });
+  const turn = (id: string, at: string, model: string, input: number) =>
+    claudeLine({
+      type: "assistant",
+      timestamp: at,
+      sessionId: SECRET_SESSION,
+      message: { id, model, usage: { input_tokens: input, output_tokens: input / 10 } },
+    });
+  await writeFile(
+    join(dir, "sess.jsonl"),
+    `${[
+      turn("msg_1", "2026-11-02T08:00:00.000Z", "claude-opus-5-5", 3000),
+      turn("msg_2", "2026-11-02T09:00:00.000Z", "claude-fable-5-1", 1000),
+    ].join("\n")}\n`,
+  );
+  const logs = await readClaudeLogs(
+    [root],
+    { start: Date.parse("2026-11-01T00:00:00.000Z"), end: Date.parse("2026-12-01T00:00:00.000Z") },
+    0,
+  );
+  const assembled = assembleProfile({
+    reports: toReports(logs),
+    hits: logs.hits,
+    period: "2026-11",
+    plans: ["claude-max-5x"],
+    source: "claude-code",
+    utcOffsetMinutes: 0,
+  });
+  assert.ok(assembled.profile, JSON.stringify(assembled.issues));
+  assert.deepEqual(assembled.profile.by_model.value, { "claude-opus": 0.75, "claude-fable": 0.25 });
+  assert.deepEqual(
+    assembled.profile.tokens?.value.map((r) => r.model),
+    ["claude-opus", "claude-fable"],
+  );
+});

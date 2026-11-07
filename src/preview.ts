@@ -22,6 +22,7 @@ const MODEL_ES: Record<string, string> = {
   mistral: "Mistral",
   composer: "Composer",
   other: "otro",
+  "claude-fable": "Fable",
 };
 
 const WEEKDAYS = [
