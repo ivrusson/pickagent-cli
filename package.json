@@ -1,14 +1,42 @@
 {
   "name": "pickagent",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
   "description": "Lee logs locales de uso y abre el veredicto de pickagent sin subir el perfil.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "pickagent": "dist/cli.js"
   },
-  "files": ["dist/cli.js", "README.md"],
+  "files": [
+    "dist/cli.js",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
+  },
+  "homepage": "https://pickagent.dev/es/escaner",
+  "bugs": {
+    "url": "https://github.com/ivrusson/pickagent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivrusson/pickagent.git",
+    "directory": "packages/scanner"
+  },
+  "keywords": [
+    "pickagent",
+    "claude-code",
+    "codex",
+    "usage",
+    "scanner",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "prepack": "node ./scripts/build.mjs"
   }
 }

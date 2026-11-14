@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { CcusageReports } from "../../../src/lib/engine/ccusage";
 
 /*
@@ -167,23 +169,137 @@ export function sanitizeReports(reports: CcusageReports): CcusageReports {
   };
 }
 
-const API_KEY_ENV = [
-  /^ANTHROPIC_/i,
-  /^OPENAI_/i,
-  /^CLAUDE_API/i,
-  /^GEMINI_/i,
-  /^GOOGLE_API/i,
-  /^AWS_SECRET/i,
-  /^AWS_ACCESS_KEY/i,
-  /^AZURE_OPENAI/i,
-];
+/**
+ * Names copied into the ccusage child, compared case-insensitively.
+ * `LANG` is exact. `LC_*` is allowed separately. Anything ending in
+ * `_TOKEN`, `_KEY` or `_SECRET`, and any `npm_config_*auth*`, is dropped
+ * even if the name would otherwise match.
+ */
+const CCUSAGE_ENV_ALLOW = new Set(
+  [
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TZ",
+    "LANG",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SystemRoot",
+    "ComSpec",
+    "PATHEXT",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
+    "npm_config_registry",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "ALL_PROXY",
+    "npm_config_proxy",
+    "npm_config_https_proxy",
+    "npm_config_cafile",
+    "npm_config_userconfig",
+    "NODE_EXTRA_CA_CERTS",
+    "SSL_CERT_FILE",
+  ].map((key) => key.toLowerCase()),
+);
+
+function deniedCcusageEnv(key: string): boolean {
+  if (/_(token|key|secret)$/i.test(key)) return true;
+  return /^npm_config_.*auth/i.test(key);
+}
+
+function allowedCcusageEnv(key: string): boolean {
+  if (deniedCcusageEnv(key)) return false;
+  const lower = key.toLowerCase();
+  if (CCUSAGE_ENV_ALLOW.has(lower)) return true;
+  return lower.startsWith("lc_");
+}
 
 export function envForCcusage(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, LOG_LEVEL: "0" };
-  for (const key of Object.keys(next)) {
-    if (API_KEY_ENV.some((pattern) => pattern.test(key))) delete next[key];
+  const next: NodeJS.ProcessEnv = { LOG_LEVEL: "0" };
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value !== "string") continue;
+    if (!allowedCcusageEnv(key)) continue;
+    next[key] = value;
   }
   return next;
+}
+
+export type NpxSpawn = {
+  command: string;
+  args: string[];
+  shell: boolean;
+  windowsVerbatimArguments?: boolean;
+};
+
+/**
+ * Quote one argument for a `cmd.exe /c` line. `%` is left alone: `%%` only
+ * collapses inside batch files, and the ccusage arguments (dates, flags, an
+ * IANA zone) never contain `%`.
+ */
+export function quoteCmdArg(arg: string): string {
+  const clean = arg.replace(/[\r\n]/g, "");
+  return `"${clean.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Node >= 20.12 refuses to spawn `npx.cmd` without a shell (CVE-2024-27980).
+ * On Windows, run `node.exe` against `npx-cli.js` so the arguments never
+ * reach `cmd.exe`. If that file is missing, fall back to `cmd.exe /c` with
+ * each argument quoted.
+ */
+export function npxCliCandidates(execPath: string): string[] {
+  const binDir = path.win32.dirname(execPath);
+  return [
+    path.win32.join(binDir, "node_modules", "npm", "bin", "npx-cli.js"),
+    path.win32.join(binDir, "..", "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+    path.win32.join(binDir, "..", "node_modules", "npm", "bin", "npx-cli.js"),
+  ];
+}
+
+export function resolveNpxCli(
+  execPath: string,
+  exists: (candidate: string) => boolean = existsSync,
+): string | null {
+  for (const candidate of npxCliCandidates(execPath)) {
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function buildNpxSpawn(
+  npxArgs: string[],
+  input: {
+    platform: NodeJS.Platform;
+    execPath: string;
+    npxCliPath: string | null;
+  },
+): NpxSpawn {
+  if (input.platform !== "win32") {
+    return { command: "npx", args: npxArgs, shell: false };
+  }
+  if (input.npxCliPath) {
+    return {
+      command: input.execPath,
+      args: [input.npxCliPath, ...npxArgs],
+      shell: false,
+    };
+  }
+  // `cmd /s /c` strips one leading and one trailing quote. The extra pair
+  // keeps the quotes around each argument, including ones that contain `&`.
+  const commandLine = ["npx.cmd", ...npxArgs].map(quoteCmdArg).join(" ");
+  return {
+    command: "cmd.exe",
+    args: ["/d", "/v:off", "/s", "/c", `"${commandLine}"`],
+    shell: false,
+    windowsVerbatimArguments: true,
+  };
 }
 
 export type CommandOutput =
@@ -197,6 +313,7 @@ export function runCommand(
   args: string[],
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
+  options?: { shell?: boolean; windowsVerbatimArguments?: boolean },
 ): Promise<CommandOutput> {
   return new Promise((resolve) => {
     let child;
@@ -205,6 +322,8 @@ export function runCommand(
         env,
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
+        shell: options?.shell ?? false,
+        windowsVerbatimArguments: options?.windowsVerbatimArguments,
       });
     } catch {
       resolve({ ok: false, reason: "spawn" });
@@ -273,17 +392,23 @@ export async function loadCcusage(input: {
   const run = input.run ?? runCommand;
   const env = envForCcusage(input.env);
   const timeoutMs = input.timeoutMs ?? 90_000;
-  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+  const npxCli = process.platform === "win32" ? resolveNpxCli(process.execPath) : null;
   const reports: CcusageReports = {};
   let ok = 0;
   await Promise.all(
     (["daily", "session", "blocks"] as const).map(async (report) => {
-      const result = await run(
-        npx,
+      const plan = buildNpxSpawn(
         ccusageArgv(report, input.since, input.until, input.timeZone),
-        env,
-        timeoutMs,
+        {
+          platform: process.platform,
+          execPath: process.execPath,
+          npxCliPath: npxCli,
+        },
       );
+      const result = await run(plan.command, plan.args, env, timeoutMs, {
+        shell: plan.shell,
+        windowsVerbatimArguments: plan.windowsVerbatimArguments,
+      });
       if (!result.ok) return;
       const json = parseJson(result.stdout);
       if (json == null) return;

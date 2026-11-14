@@ -2,12 +2,46 @@
 
 CLI local. Lee el uso de tus agentes, construye un perfil `pickagent.profile/v1` y abre el veredicto en el navegador. El perfil viaja en el fragmento `#p=` de la URL. No se sube.
 
+Página del escáner: https://pickagent.dev/es/escaner
+
+## Instalar y usar
+
+Hace falta Node 20 o superior. Windows: sin probar.
+
+En una máquina que no tiene el repositorio:
+
+```bash
+npx pickagent scan
+npx pickagent scan --period 2026-10 --plan claude-pro
+npx pickagent scan --help
+```
+
+`npx` descarga el paquete y lo ejecuta ahí. No se instala en un proyecto.
+
+## Opciones
+
+```text
+--period YYYY-MM     Mes natural. Por defecto, el mes local en curso.
+--days N             Últimos N días, incluido hoy (1–366).
+--plan SLUG          Plan que pagas hoy. Se puede repetir. Ej. claude-pro.
+--base-url URL       Origen del veredicto. Por defecto https://pickagent.dev.
+--json               Escribe solo el perfil JSON en stdout.
+--yes                Abre el navegador sin preguntar.
+--no-open            No abre el navegador.
+--codex              Experimental: lee rollouts de Codex en vez de Claude.
+--help               Esta ayuda.
+```
+
+`--codex` no se mezcla con Claude: un perfil tiene una sola fuente.
+
+Desarrollo, dentro del repositorio:
+
 ```bash
 npm run scan:build
 node packages/scanner/dist/cli.js scan --period 2026-10 --plan claude-pro
 ```
 
-Desarrollo, sin empaquetar: `npm run scan:dev -- scan --help`.
+Sin empaquetar: `npm run scan:dev -- scan --help`.
 
 ## Qué lee
 
@@ -21,6 +55,8 @@ Claude Code, por defecto.
 
 `ccusage daily` a secas, en ccusage 20, mezcla todos los agentes. Por eso el escáner usa la forma enfocada `ccusage claude`.
 
+ccusage no es de pickagent. Es código de terceros y cada ejecución lo resuelve `npx` como `ccusage@latest`, sin versión fijada.
+
 Codex, solo con `--codex` (experimental, ver abajo). No se mezcla con Claude: cada métrica del perfil tiene una sola fuente.
 
 ## Qué no lee, nunca
@@ -28,7 +64,7 @@ Codex, solo con `--codex` (experimental, ver abajo). No se mezcla con Claude: ca
 - El texto de los mensajes, los prompts y el contenido de las herramientas.
 - Rutas, `cwd`, nombres de proyecto y títulos.
 - El id de sesión en claro. Sirve solo para agrupar, y antes se pasa por SHA-256. El hash no entra en el perfil.
-- Claves de API. No se piden. Al lanzar ccusage se quitan del entorno las variables `ANTHROPIC_*`, `OPENAI_*`, `CLAUDE_API*`, `GEMINI_*`, `GOOGLE_API*`, `AWS_SECRET*`, `AWS_ACCESS_KEY*` y `AZURE_OPENAI*`. `CLAUDE_CONFIG_DIR` y `CODEX_HOME` se conservan.
+- Claves de API. No se piden. El proceso de ccusage no hereda el entorno: solo recibe `LOG_LEVEL=0` (lo pone el escáner) y, si existen, estas variables: `PATH`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `TZ`, `LANG`, `LC_*`, `TMPDIR`, `TEMP`, `TMP`, `SystemRoot`, `ComSpec`, `PATHEXT`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `npm_config_registry`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `http_proxy`, `https_proxy`, `no_proxy`, `ALL_PROXY`, `npm_config_proxy`, `npm_config_https_proxy`, `npm_config_cafile`, `npm_config_userconfig`, `NODE_EXTRA_CA_CERTS` y `SSL_CERT_FILE`. Los nombres se comparan sin distinguir mayúsculas. No se pasa ninguna variable cuyo nombre termine en `_TOKEN`, `_KEY` o `_SECRET`, ni `npm_config_*auth*`. Si la URL de tu proxy o de tu registry lleva usuario y contraseña, ccusage la recibe. ccusage se ejecuta con tus permisos de usuario, así que puede leer tus archivos, como `~/.npmrc`.
 
 De cada línea de Claude se copian, como números u horas, solo esto: marca de tiempo, id de modelo, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` y el id de sesión (ya hasheado). Las líneas que no parecen un registro `assistant` con `usage` o `rate_limit` no se parsean.
 
@@ -44,6 +80,12 @@ Solo dos salidas de red:
 - Abrir el navegador en la URL del veredicto, después de confirmar.
 
 No hay más HTTP. No hay base de datos.
+
+Para ver esas llamadas: en el repositorio, `npm run scan:smoke -- --trace`. El script anota cada `npx` que lanza el proceso y explica cómo mirar los sockets con `tcpdump`. El contenedor se llama `pickagent-smoke-<pid>`, el pid del script.
+
+El smoke por defecto usa `--network none`. No descarga ccusage y no ejercita el camino en el que ccusage responde bien. Comprueba el parser local y que el paquete no abre otra conexión. `--trace` deja la red abierta.
+
+Fuera del repositorio, con el paquete ya descargado, en Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx pickagent scan --no-open`. `strace` es solo de Linux; en macOS no existe. La única conexión esperada es la de `npx` al bajar `ccusage`. Con `--no-open` el navegador no se abre.
 
 ## Bloqueos de Claude (parser local)
 
@@ -95,4 +137,6 @@ El perfil pasa por `parseProfile` antes de usarse. Si no cumple el esquema, se i
 
 El código cabe en `packages/scanner/src`. El motor no se modifica: se importa `src/lib/engine` y esbuild lo mete en `dist/cli.js` junto con Zod. No hay dependencias de runtime en este paquete.
 
-Busca `fetch(`, `http.request`, `net.connect` y claves: no deberían aparecer, salvo el comentario que lista las variables que se borran. La única ejecución externa es `npx ccusage@latest` y el `open` / `xdg-open` del sistema.
+Busca `fetch(`, `http.request`, `net.connect` y claves: no deberían aparecer, salvo la lista blanca de variables que sí se pasan a ccusage. La única ejecución externa es `npx ccusage@latest` y el `open` / `xdg-open` del sistema. En Windows el hijo no arranca `npx.cmd` a pelo (Node 20.12 o superior lo rechaza) y la URL del navegador va entre comillas. Windows: sin probar.
+
+En una máquina limpia, `npm run scan:smoke` (`scripts/scanner/smoke.sh`) ejecuta `npx pickagent scan --help` y un `scan --json --no-open` contra logs de fixture, dentro de contenedores `node:20` y `node:22`. Por defecto usa el `npm pack` local, antes de publicar. `npm run scan:smoke -- --published` usa `npx pickagent@<versión>` del registro.

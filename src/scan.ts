@@ -188,12 +188,28 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
   return 0;
 }
 
+export function browserOpenSpawn(
+  url: string,
+  platform: NodeJS.Platform,
+): { command: string; args: string[]; windowsVerbatimArguments?: boolean } {
+  if (platform === "darwin") return { command: "open", args: [url] };
+  // On Windows the URL goes to the shell handler without cmd.exe, so `&`
+  // and `%` in it are never interpreted.
+  if (platform === "win32") {
+    return { command: "rundll32", args: ["url.dll,FileProtocolHandler", url] };
+  }
+  return { command: "xdg-open", args: [url] };
+}
+
 export function openUrl(url: string): Promise<void> {
-  const command =
-    process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const spec = browserOpenSpawn(url, process.platform);
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    const child = spawn(spec.command, spec.args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      windowsVerbatimArguments: spec.windowsVerbatimArguments,
+    });
     child.on("error", reject);
     child.on("spawn", () => {
       child.unref();
