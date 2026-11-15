@@ -168,11 +168,10 @@ test("npx on Windows does not spawn npx.cmd, and start quotes the URL", () => {
   assert.equal(open.windowsVerbatimArguments, undefined);
 });
 
-test("ccusage is focused on Claude and the child env has no API keys", () => {
+test("ccusage uses unified reports with --by-agent and strips API keys", () => {
   assert.deepEqual(ccusageArgv("daily", "2026-10-01", "2026-10-31", "Europe/Madrid"), [
     "--yes",
     "ccusage@latest",
-    "claude",
     "daily",
     "--json",
     "--no-cost",
@@ -184,10 +183,12 @@ test("ccusage is focused on Claude and the child env has no API keys", () => {
     "--timezone",
     "Europe/Madrid",
     "--breakdown",
+    "--by-agent",
   ]);
   const blocks = ccusageArgv("blocks", "2026-10-01", "2026-10-31", null);
   assert.equal(blocks.includes("claude"), false);
   assert.equal(blocks.includes("--breakdown"), false);
+  assert.equal(blocks.includes("--by-agent"), false);
   assert.ok(blocks.includes("blocks"));
 
   const env = envForCcusage({

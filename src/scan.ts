@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { profileToHash, type Issue } from "../../../src/lib/engine";
+import {
+  mergeProfileParts,
+  parseProfile,
+  profileFromMultiAgent,
+  profileToHash,
+  type Issue,
+  type Profile,
+  type Source,
+} from "../../../src/lib/engine";
 import {
   boundsOf,
   HELP,
@@ -15,11 +23,15 @@ import { assembleProfile, type Assembled } from "./assemble";
 import { loadCcusage, systemTimeZone, type CcusageLoad } from "./ccusage-run";
 import { claudeConfigDirs, readClaudeLogs } from "./claude-jsonl";
 import { codexHomeDir, readCodexLogs } from "./codex-rollout";
+import {
+  applyDetectedPlans,
+  detectPlans,
+} from "./detect-plans";
 import { noteLines, renderPreview } from "./preview";
 import { localDay, toReports } from "./reports";
 
 const CCUSAGE_READER =
-  "npx ccusage@latest claude daily|session y blocks --json --offline --breakdown";
+  "npx ccusage@latest daily|session --json --by-agent y blocks --offline --breakdown";
 
 const PROMPT = "¿Abrir el veredicto en el navegador? [s/N] ";
 
@@ -60,59 +72,25 @@ function renderFailure(period: string, issues: Issue[], warnings: string[]): str
   return `${lines.join("\n")}\n`;
 }
 
-async function fromClaude(args: ScanArgs, io: ScanIo, offset: number): Promise<Assembled & { reader: string }> {
-  const range = periodRange(args.period);
-  const bounds = boundsOf(args.period, offset);
-  if (!range || !bounds) {
-    return {
-      profile: null,
-      issues: [{ path: "period", message: "periodo inválido" }],
-      warnings: [],
-      reader: "",
-    };
-  }
-  const loaded = await io.loadCcusage({
-    since: range.since,
-    until: range.until,
-    timeZone: io.timeZone,
-  });
-  const base = {
-    period: args.period,
-    plans: args.plans,
-    source: "claude-code" as const,
-    utcOffsetMinutes: offset,
-  };
-  if (!loaded.failed) {
-    const fromTool = assembleProfile({
-      ...base,
-      reports: loaded.reports,
-      hits: [],
-    });
-    if (fromTool.profile) return { ...fromTool, reader: CCUSAGE_READER };
-  }
-  const logs = await readClaudeLogs(claudeConfigDirs(io.env, io.home), bounds, offset);
-  const local = assembleProfile({
-    ...base,
-    reports: toReports(logs),
-    hits: logs.hits,
-    limitHitsKnown: true,
-    extraWarnings: [loaded.failed ? "ccusage_failed" : "ccusage_incomplete"],
-  });
-  const reader = io.env.CLAUDE_CONFIG_DIR
-    ? "parser local (CLAUDE_CONFIG_DIR)"
-    : "parser local de ~/.claude/projects/**/*.jsonl";
-  return { ...local, reader };
+function asAssembled(
+  profile: Profile | null,
+  warnings: string[],
+  reader: string,
+  issues: Issue[] = [],
+): Assembled & { reader: string } {
+  return { profile, issues, warnings, reader };
 }
 
-async function fromCodex(args: ScanArgs, io: ScanIo, offset: number): Promise<Assembled & { reader: string }> {
+async function fromCodexOnly(
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+): Promise<Assembled & { reader: string }> {
   const bounds = boundsOf(args.period, offset);
   if (!bounds) {
-    return {
-      profile: null,
-      issues: [{ path: "period", message: "periodo inválido" }],
-      warnings: [],
-      reader: "",
-    };
+    return asAssembled(null, [], "", [
+      { path: "period", message: "periodo inválido" },
+    ]);
   }
   const logs = await readCodexLogs(codexHomeDir(io.env, io.home), bounds, offset);
   const assembled = assembleProfile({
@@ -129,6 +107,162 @@ async function fromCodex(args: ScanArgs, io: ScanIo, offset: number): Promise<As
   return {
     ...assembled,
     reader: "parser experimental de $CODEX_HOME/sessions/**/rollout-*.jsonl",
+  };
+}
+
+async function fromLocalClaude(
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+  extraWarnings: string[],
+): Promise<Assembled & { reader: string }> {
+  const bounds = boundsOf(args.period, offset);
+  if (!bounds) {
+    return asAssembled(null, extraWarnings, "", [
+      { path: "period", message: "periodo inválido" },
+    ]);
+  }
+  const logs = await readClaudeLogs(claudeConfigDirs(io.env, io.home), bounds, offset);
+  const local = assembleProfile({
+    period: args.period,
+    plans: args.plans,
+    source: "claude-code",
+    utcOffsetMinutes: offset,
+    reports: toReports(logs),
+    hits: logs.hits,
+    limitHitsKnown: true,
+    extraWarnings,
+  });
+  const reader = io.env.CLAUDE_CONFIG_DIR
+    ? "parser local (CLAUDE_CONFIG_DIR)"
+    : "parser local de ~/.claude/projects/**/*.jsonl";
+  return { ...local, reader };
+}
+
+async function maybeMergeLocalCodex(
+  profile: Profile,
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+  warnings: string[],
+): Promise<{ profile: Profile; warnings: string[] }> {
+  if (profile.by_source?.codex || profile.provenance.codex) {
+    return { profile, warnings };
+  }
+  const bounds = boundsOf(args.period, offset);
+  if (!bounds) return { profile, warnings };
+  const logs = await readCodexLogs(codexHomeDir(io.env, io.home), bounds, offset);
+  if (logs.sessions.size === 0 && logs.hits.length === 0) {
+    return { profile, warnings };
+  }
+  const local = assembleProfile({
+    reports: toReports(logs),
+    hits: logs.hits,
+    period: args.period,
+    plans: args.plans,
+    source: "codex",
+    utcOffsetMinutes: offset,
+    estimateTokens: true,
+    limitHitsKnown: true,
+    extraWarnings: ["codex_experimental", "codex_cache_write_unreported"],
+  });
+  if (!local.profile) {
+    return { profile, warnings: [...warnings, ...local.warnings] };
+  }
+  const merged = mergeProfileParts([profile, local.profile], args.plans);
+  if (!merged) return { profile, warnings: [...warnings, ...local.warnings] };
+  return {
+    profile: merged,
+    warnings: [...warnings, ...local.warnings],
+  };
+}
+
+async function fromAllAgents(
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+): Promise<Assembled & { reader: string }> {
+  const range = periodRange(args.period);
+  if (!range) {
+    return asAssembled(null, [], "", [
+      { path: "period", message: "periodo inválido" },
+    ]);
+  }
+  const loaded = await io.loadCcusage({
+    since: range.since,
+    until: range.until,
+    timeZone: io.timeZone,
+  });
+
+  if (!loaded.failed) {
+    const multi = profileFromMultiAgent(loaded.reports, {
+      period: args.period,
+      plans: args.plans,
+      utcOffsetMinutes: offset,
+    });
+    if (multi.profile) {
+      const withCodex = await maybeMergeLocalCodex(
+        multi.profile,
+        args,
+        io,
+        offset,
+        multi.warnings,
+      );
+      return asAssembled(withCodex.profile, withCodex.warnings, CCUSAGE_READER);
+    }
+  }
+
+  const local = await fromLocalClaude(args, io, offset, [
+    loaded.failed ? "ccusage_failed" : "ccusage_incomplete",
+  ]);
+  if (!local.profile) return local;
+  const withCodex = await maybeMergeLocalCodex(
+    local.profile,
+    args,
+    io,
+    offset,
+    local.warnings,
+  );
+  return asAssembled(
+    withCodex.profile,
+    withCodex.warnings,
+    `${local.reader}; Codex local si hay rollouts`,
+  );
+}
+
+async function withDetectedPlans(
+  profile: Profile,
+  args: ScanArgs,
+  io: ScanIo,
+  warnings: string[],
+): Promise<{ profile: Profile; warnings: string[] }> {
+  const sources = new Set<Source>([
+    ...(Object.keys(profile.by_source ?? {}) as Source[]),
+    ...(Object.keys(profile.provenance) as Source[]),
+  ]);
+  // Always try Claude/Codex auth even if that harness had no usage this period.
+  sources.add("claude-code");
+  sources.add("codex");
+  const detected = await detectPlans({
+    home: io.home,
+    env: io.env,
+    sources: [...sources],
+  });
+  const next = applyDetectedPlans(profile, detected, { cliPlans: args.plans });
+  const parsed = parseProfile(next);
+  if (!parsed.ok) {
+    return {
+      profile,
+      warnings: [
+        ...warnings,
+        ...detected.warnings,
+        "plan_detect_invalid_profile",
+      ],
+    };
+  }
+  return {
+    profile: parsed.profile,
+    warnings: [...warnings, ...detected.warnings],
   };
 }
 
@@ -162,23 +296,35 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
   }
   const args = parsed.args;
   const assembled = args.codex
-    ? await fromCodex(args, io, offset)
-    : await fromClaude(args, io, offset);
+    ? await fromCodexOnly(args, io, offset)
+    : await fromAllAgents(args, io, offset);
   if (!assembled.profile) {
     io.stderr(renderFailure(args.period, assembled.issues, assembled.warnings));
     return 1;
   }
-  const url = verdictUrl(args.baseUrl, profileToHash(assembled.profile));
+  const enriched = await withDetectedPlans(
+    assembled.profile,
+    args,
+    io,
+    assembled.warnings,
+  );
+  const url = verdictUrl(args.baseUrl, profileToHash(enriched.profile));
   if (args.json) {
-    io.stdout(`${JSON.stringify(assembled.profile, null, 2)}\n`);
-    if (args.codex || assembled.warnings.some((warning) => warning.startsWith("ccusage_"))) {
-      for (const line of noteLines(assembled.warnings)) io.stderr(`${line}\n`);
+    io.stdout(`${JSON.stringify(enriched.profile, null, 2)}\n`);
+    if (
+      args.codex ||
+      enriched.warnings.some(
+        (warning) =>
+          warning.includes("ccusage") || warning.startsWith("plan_"),
+      )
+    ) {
+      for (const line of noteLines(enriched.warnings)) io.stderr(`${line}\n`);
     }
   } else {
     io.stdout(
-      `${renderPreview(assembled.profile, {
+      `${renderPreview(enriched.profile, {
         url,
-        warnings: assembled.warnings,
+        warnings: enriched.warnings,
         scannedAt: localDay(io.now.getTime(), offset),
         reader: assembled.reader,
       })}\n`,

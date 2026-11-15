@@ -6,8 +6,14 @@ export const DEFAULT_BASE_URL = "https://pickagent.dev";
 
 export const HELP = `pickagent scan — perfil medido, en local
 
-Lee el uso de Claude Code (ccusage, y un parser propio si ccusage falla)
-y abre el veredicto. El perfil viaja en el fragmento de la URL; no se sube.
+Lee el uso de todos los agentes que detecta ccusage (Claude Code, Codex,
+OpenCode, Gemini CLI, Copilot, …), construye un perfil con totales y
+desglose por harness (\`by_source\`) y abre el veredicto. El perfil viaja
+en el fragmento de la URL; no se sube.
+
+Sin --plan, intenta leer el plan local de Claude (~/.claude.json) y de
+Codex (claim chatgpt_plan_type en ~/.codex/auth.json) y lo mete en
+\`plans\` y en \`by_source.*.plan\`. No llama a la red ni sube tokens.
 
 Uso
   pickagent scan [opciones]
@@ -16,14 +22,16 @@ Opciones
   --period YYYY-MM     Mes natural. Por defecto, el mes local en curso.
   --days N             Últimos N días, incluido hoy (1–366).
   --plan SLUG          Plan que pagas hoy. Se puede repetir. Ej. claude-pro.
+                       Si lo pasas, sustituye a la detección automática.
   --base-url URL       Origen del veredicto. Por defecto ${DEFAULT_BASE_URL}.
   --json               Escribe solo el perfil JSON en stdout.
   --yes                Abre el navegador sin preguntar.
   --no-open            No abre el navegador.
-  --codex              Experimental: lee rollouts de Codex en vez de Claude.
+  --codex              Solo Codex (rollouts locales; experimental).
   --help               Esta ayuda.
 
-Codex (--codex) no está mezclado con Claude: un perfil tiene una sola fuente.
+Por defecto se mezclan todos los harnesses detectados. --codex limita la
+lectura a Codex.
 `;
 
 export type ScanArgs = {

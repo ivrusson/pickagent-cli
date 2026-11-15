@@ -15,7 +15,7 @@ export type AssembleInput = {
   hits: LimitHit[];
   period: string;
   plans: string[];
-  source: Extract<Source, "claude-code" | "codex">;
+  source: Source;
   utcOffsetMinutes: number;
   /** Codex cache writes are absent, so token metrics stay estimated. */
   estimateTokens?: boolean;

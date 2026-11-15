@@ -4,13 +4,11 @@ import path from "node:path";
 import type { CcusageReports } from "../../../src/lib/engine/ccusage";
 
 /*
- * ccusage 20's plain `daily` and `session` commands aggregate every agent.
- * Claude Code is the focused form `ccusage claude daily|session`. `blocks`
- * is the Claude 5-hour window report and has no source prefix.
- * Flags checked against ccusage docs (guide/cli-options, guide/claude):
- *   --json --breakdown --no-cost --offline --since --until --timezone
- * --since/--until accept YYYY-MM-DD and are inclusive. --offline keeps
- * ccusage off the pricing network. npx itself may download the package.
+ * Unified ccusage reports (`daily` / `session`) include every detected agent.
+ * `--by-agent` adds per-agent slices used for `by_source` on the profile.
+ * `blocks` remains the Claude 5-hour window report (no agent prefix).
+ * Flags: --json --by-agent --breakdown --no-cost --offline --since --until
+ * --timezone. Dates are inclusive. --offline skips the pricing network.
  */
 
 const TOKEN_KEYS = [
@@ -45,12 +43,12 @@ export function ccusageArgv(
   until: string,
   timeZone: string | null,
 ): string[] {
-  const args = ["--yes", "ccusage@latest"];
-  if (report === "blocks") args.push("blocks");
-  else args.push("claude", report);
+  const args = ["--yes", "ccusage@latest", report];
   args.push("--json", "--no-cost", "--offline", "--since", since, "--until", until);
   if (timeZone) args.push("--timezone", timeZone);
-  if (report !== "blocks") args.push("--breakdown");
+  if (report !== "blocks") {
+    args.push("--breakdown", "--by-agent");
+  }
   return args;
 }
 
@@ -102,6 +100,34 @@ function sanitizeBreakdownItem(row: Dict): Dict | null {
   return { modelName: name, ...tokenFields(row) };
 }
 
+function agentId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim().toLowerCase();
+  if (!name || name.length > 40) return null;
+  if (!/^[a-z][a-z0-9_-]*$/.test(name)) return null;
+  return name;
+}
+
+function sanitizeAgentSlice(row: Dict): Dict | null {
+  const name = agentId(row.agent);
+  if (!name) return null;
+  const out: Dict = { agent: name, ...tokenFields(row) };
+  for (const key of ["modelsUsed", "models"] as const) {
+    if (!Array.isArray(row[key])) continue;
+    const names = row[key].map(modelName).filter((n) => n != null);
+    if (names.length) out[key] = names;
+  }
+  if (Array.isArray(row.modelBreakdowns)) {
+    const items = row.modelBreakdowns.filter(isDict).flatMap((item) => {
+      const clean = sanitizeBreakdownItem(item);
+      return clean ? [clean] : [];
+    });
+    if (items.length) out.modelBreakdowns = items;
+  }
+  if (isDict(row.tokenCounts)) out.tokenCounts = tokenFields(row.tokenCounts);
+  return out;
+}
+
 function sanitizeRow(row: Dict): Dict {
   const out: Dict = {};
   for (const key of TIME_KEYS) {
@@ -109,6 +135,8 @@ function sanitizeRow(row: Dict): Dict {
     if (value) out[key] = value;
   }
   Object.assign(out, tokenFields(row));
+  const agent = agentId(row.agent);
+  if (agent) out.agent = agent;
   if (row.isGap === true || row.isGap === false) out.isGap = row.isGap;
   if (row.isActive === true || row.isActive === false) out.isActive = row.isActive;
   for (const key of ["modelsUsed", "models"] as const) {
@@ -122,6 +150,19 @@ function sanitizeRow(row: Dict): Dict {
       return clean ? [clean] : [];
     });
     if (items.length) out.modelBreakdowns = items;
+  }
+  if (Array.isArray(row.agents)) {
+    const agents = row.agents.filter(isDict).flatMap((item) => {
+      const clean = sanitizeAgentSlice(item);
+      return clean ? [clean] : [];
+    });
+    if (agents.length) out.agents = agents;
+  }
+  if (isDict(row.metadata) && Array.isArray(row.metadata.agents)) {
+    const names = row.metadata.agents
+      .map(agentId)
+      .filter((name): name is string => name != null);
+    if (names.length) out.metadata = { agents: names };
   }
   if (isDict(row.breakdown)) {
     const map: Dict = {};

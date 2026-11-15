@@ -28,11 +28,12 @@ npx pickagent scan --help
 --json               Escribe solo el perfil JSON en stdout.
 --yes                Abre el navegador sin preguntar.
 --no-open            No abre el navegador.
---codex              Experimental: lee rollouts de Codex en vez de Claude.
+--codex              Solo Codex (rollouts locales; experimental).
 --help               Esta ayuda.
 ```
 
-`--codex` no se mezcla con Claude: un perfil tiene una sola fuente.
+Por defecto se mezclan todos los harnesses. `--codex` limita la lectura a Codex.
+`--plan` sustituye la detección automática de planes.
 
 Desarrollo, dentro del repositorio:
 
@@ -45,19 +46,20 @@ Sin empaquetar: `npm run scan:dev -- scan --help`.
 
 ## Qué lee
 
-Claude Code, por defecto.
+Todos los agentes que detecta ccusage, por defecto.
 
-1. `npx --yes ccusage@latest` con tres informes, en paralelo:
-   - `claude daily --json --breakdown --no-cost --offline --since YYYY-MM-DD --until YYYY-MM-DD --timezone <IANA>`
-   - `claude session` con las mismas banderas
-   - `blocks` con `--json --no-cost --offline` y el mismo rango (el informe de ventanas de 5 h es de Claude; no lleva prefijo `claude`)
-2. Si ccusage no arranca, no devuelve JSON o el resultado no cumple el esquema, el parser propio lee `~/.claude/projects/**/*.jsonl` y, si existe, `~/.config/claude/projects/**/*.jsonl`. `CLAUDE_CONFIG_DIR` sustituye esas rutas y admite una lista separada por comas.
-
-`ccusage daily` a secas, en ccusage 20, mezcla todos los agentes. Por eso el escáner usa la forma enfocada `ccusage claude`.
+1. `npx --yes ccusage@latest` con tres informes unificados, en paralelo:
+   - `daily --json --by-agent --breakdown --no-cost --offline --since YYYY-MM-DD --until YYYY-MM-DD --timezone <IANA>`
+   - `session` con las mismas banderas
+   - `blocks` con `--json --no-cost --offline` y el mismo rango (ventanas de 5 h de Claude)
+2. El JSON `--by-agent` se parte por harness. Los totales van en las métricas del perfil y el desglose en `by_source` (horas, sesiones, procedencia por fuente).
+3. Si ccusage no arranca o no valida, el parser propio lee `~/.claude/projects/**/*.jsonl` (y `~/.config/claude`). `CLAUDE_CONFIG_DIR` sustituye esas rutas.
+4. Si hay rollouts locales de Codex y ccusage no aportó Codex, se fusionan con el perfil.
+5. Planes (sin red): lee el tier de Claude en `~/.claude.json` / credenciales y el `chatgpt_plan_type` del JWT en `~/.codex/auth.json`, los mapea a slugs del catálogo (`claude-pro`, `chatgpt-plus`, …) y los escribe en `plans` y `by_source.*.plan`. `--plan` sustituye la detección. No se suben tokens ni correo.
 
 ccusage no es de pickagent. Es código de terceros y cada ejecución lo resuelve `npx` como `ccusage@latest`, sin versión fijada.
 
-Codex, solo con `--codex` (experimental, ver abajo). No se mezcla con Claude: cada métrica del perfil tiene una sola fuente.
+`--codex` limita la lectura a los rollouts locales de Codex (experimental).
 
 ## Qué no lee, nunca
 
