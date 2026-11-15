@@ -27,6 +27,7 @@ import {
   applyDetectedPlans,
   detectPlans,
 } from "./detect-plans";
+import { readCursorUsage } from "./cursor-usage";
 import { noteLines, renderPreview } from "./preview";
 import { localDay, toReports } from "./reports";
 
@@ -177,6 +178,73 @@ async function maybeMergeLocalCodex(
   };
 }
 
+async function maybeMergeLocalCursor(
+  profile: Profile,
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+  warnings: string[],
+): Promise<{ profile: Profile; warnings: string[] }> {
+  if (profile.by_source?.cursor || profile.provenance.cursor) {
+    return { profile, warnings };
+  }
+  const bounds = boundsOf(args.period, offset);
+  if (!bounds) return { profile, warnings };
+  const logs = await readCursorUsage(io.env, io.home, bounds, offset);
+  if (logs.sessions.size === 0) {
+    return { profile, warnings };
+  }
+  const local = assembleProfile({
+    reports: toReports(logs),
+    hits: logs.hits,
+    period: args.period,
+    plans: args.plans,
+    source: "cursor",
+    utcOffsetMinutes: offset,
+    estimateTokens: true,
+    limitHitsKnown: true,
+    extraWarnings: [
+      "cursor_experimental",
+      "cursor_tokens_synthetic",
+      logs.transcriptSessions
+        ? "cursor_from_transcripts"
+        : "cursor_from_tracking",
+    ],
+  });
+  if (!local.profile) {
+    return { profile, warnings: [...warnings, ...local.warnings] };
+  }
+  const merged = mergeProfileParts([profile, local.profile], args.plans);
+  if (!merged) return { profile, warnings: [...warnings, ...local.warnings] };
+  return {
+    profile: merged,
+    warnings: [...warnings, ...local.warnings],
+  };
+}
+
+async function withLocalHarnesses(
+  profile: Profile,
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+  warnings: string[],
+): Promise<{ profile: Profile; warnings: string[] }> {
+  const withCodex = await maybeMergeLocalCodex(
+    profile,
+    args,
+    io,
+    offset,
+    warnings,
+  );
+  return maybeMergeLocalCursor(
+    withCodex.profile,
+    args,
+    io,
+    offset,
+    withCodex.warnings,
+  );
+}
+
 async function fromAllAgents(
   args: ScanArgs,
   io: ScanIo,
@@ -201,14 +269,14 @@ async function fromAllAgents(
       utcOffsetMinutes: offset,
     });
     if (multi.profile) {
-      const withCodex = await maybeMergeLocalCodex(
+      const merged = await withLocalHarnesses(
         multi.profile,
         args,
         io,
         offset,
         multi.warnings,
       );
-      return asAssembled(withCodex.profile, withCodex.warnings, CCUSAGE_READER);
+      return asAssembled(merged.profile, merged.warnings, CCUSAGE_READER);
     }
   }
 
@@ -216,7 +284,7 @@ async function fromAllAgents(
     loaded.failed ? "ccusage_failed" : "ccusage_incomplete",
   ]);
   if (!local.profile) return local;
-  const withCodex = await maybeMergeLocalCodex(
+  const merged = await withLocalHarnesses(
     local.profile,
     args,
     io,
@@ -224,9 +292,9 @@ async function fromAllAgents(
     local.warnings,
   );
   return asAssembled(
-    withCodex.profile,
-    withCodex.warnings,
-    `${local.reader}; Codex local si hay rollouts`,
+    merged.profile,
+    merged.warnings,
+    `${local.reader}; Codex/Cursor local si hay datos`,
   );
 }
 
@@ -240,9 +308,10 @@ async function withDetectedPlans(
     ...(Object.keys(profile.by_source ?? {}) as Source[]),
     ...(Object.keys(profile.provenance) as Source[]),
   ]);
-  // Always try Claude/Codex auth even if that harness had no usage this period.
+  // Always try Claude/Codex/Cursor auth even if that harness had no usage this period.
   sources.add("claude-code");
   sources.add("codex");
+  sources.add("cursor");
   const detected = await detectPlans({
     home: io.home,
     env: io.env,

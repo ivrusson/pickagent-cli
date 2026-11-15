@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Source } from "../../../src/lib/engine";
+import { CURSOR_MEMBERSHIP_KEY, cursorStateDbPath } from "./cursor-paths";
+import { readSqliteItemValue } from "./cursor-sqlite";
 
 /*
  * Best-effort local plan detection. No network, no chat bodies.
  * Claude: tier strings in ~/.claude.json (and optional credentials).
  * Codex: chatgpt_plan_type claim inside ~/.codex/auth.json JWTs.
+ * Cursor: cursorAuth/stripeMembershipType in state.vscdb (no tokens).
  * Never returns tokens or email — only catalog plan slugs.
  */
 
@@ -23,7 +26,7 @@ export type DetectPlansResult = {
   warnings: string[];
 };
 
-const SOURCE_ORDER: Source[] = ["claude-code", "codex"];
+const SOURCE_ORDER: Source[] = ["claude-code", "codex", "cursor"];
 
 /** First non-empty JSON string value for `key` (avoids parsing huge files). */
 export function jsonStringValue(text: string, key: string): string | null {
@@ -89,6 +92,43 @@ export function mapCodexPlanType(raw: string): string | null {
     case "team":
       return "chatgpt-business";
     case "free":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Map Cursor `stripeMembershipType` / X-subscription names to catalog ids.
+ * Legacy Pro/Pro+/Ultra → Premium/Super/Ultra (Cursor comparable-plan table).
+ */
+export function mapCursorMembership(raw: string): string | null {
+  const s = raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!s) return null;
+  switch (s) {
+    case "plus":
+    case "cursor_plus":
+      return "cursor-plus";
+    case "pro":
+    case "premium":
+    case "cursor_premium":
+      return "cursor-premium";
+    case "pro_plus":
+    case "proplus":
+    case "super":
+    case "cursor_super":
+      return "cursor-super";
+    case "ultra":
+    case "cursor_ultra":
+      return "cursor-ultra";
+    case "free":
+    case "hobby":
+    case "free_trial":
+    case "trial":
+      return null;
+    case "enterprise":
+    case "team":
+    case "teams":
       return null;
     default:
       return null;
@@ -239,6 +279,31 @@ export async function detectCodexPlan(
   return null;
 }
 
+export async function detectCursorPlan(
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<DetectedPlan | { warning: string } | null> {
+  const override = env.CURSOR_MEMBERSHIP_TYPE?.trim();
+  const raw =
+    override && override.length
+      ? override
+      : await readSqliteItemValue(
+          cursorStateDbPath(env, home),
+          CURSOR_MEMBERSHIP_KEY,
+        );
+  if (!raw) return null;
+  const plan = mapCursorMembership(raw);
+  if (plan) {
+    return {
+      source: "cursor",
+      plan,
+      raw,
+      confidence: "measured",
+    };
+  }
+  return { warning: `plan_unmapped:cursor:${raw}` };
+}
+
 export async function detectPlans(input: {
   home: string;
   env: NodeJS.ProcessEnv;
@@ -256,6 +321,10 @@ export async function detectPlans(input: {
   const codex = await detectCodexPlan(input.home, input.env);
   if (codex && "warning" in codex) warnings.push(codex.warning);
   else if (codex && (!allow || allow.has("codex"))) detections.push(codex);
+
+  const cursor = await detectCursorPlan(input.home, input.env);
+  if (cursor && "warning" in cursor) warnings.push(cursor.warning);
+  else if (cursor && (!allow || allow.has("cursor"))) detections.push(cursor);
 
   detections.sort(
     (a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source),

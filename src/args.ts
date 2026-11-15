@@ -11,9 +11,10 @@ OpenCode, Gemini CLI, Copilot, …), construye un perfil con totales y
 desglose por harness (\`by_source\`) y abre el veredicto. El perfil viaja
 en el fragmento de la URL; no se sube.
 
-Sin --plan, intenta leer el plan local de Claude (~/.claude.json) y de
-Codex (claim chatgpt_plan_type en ~/.codex/auth.json) y lo mete en
-\`plans\` y en \`by_source.*.plan\`. No llama a la red ni sube tokens.
+Sin --plan, intenta leer el plan local de Claude (~/.claude.json), de
+Codex (claim chatgpt_plan_type en ~/.codex/auth.json) y de Cursor
+(stripeMembershipType en state.vscdb) y lo mete en \`plans\` y en
+\`by_source.*.plan\`. No llama a la red ni sube tokens.
 
 Uso
   pickagent scan [opciones]

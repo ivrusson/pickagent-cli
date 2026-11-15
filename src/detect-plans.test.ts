@@ -9,6 +9,7 @@ import {
   jsonStringValue,
   mapClaudeTier,
   mapCodexPlanType,
+  mapCursorMembership,
 } from "./detect-plans";
 
 test("mapClaudeTier prefers max/pro consumer tiers", () => {
@@ -27,6 +28,17 @@ test("mapCodexPlanType covers ChatGPT plan_type values", () => {
   assert.equal(mapCodexPlanType("pro"), "chatgpt-pro-200");
   assert.equal(mapCodexPlanType("promax"), "chatgpt-pro-500");
   assert.equal(mapCodexPlanType("free"), null);
+});
+
+test("mapCursorMembership maps legacy Stripe + X-subscription names", () => {
+  assert.equal(mapCursorMembership("plus"), "cursor-plus");
+  assert.equal(mapCursorMembership("pro"), "cursor-premium");
+  assert.equal(mapCursorMembership("pro_plus"), "cursor-super");
+  assert.equal(mapCursorMembership("ultra"), "cursor-ultra");
+  assert.equal(mapCursorMembership("premium"), "cursor-premium");
+  assert.equal(mapCursorMembership("super"), "cursor-super");
+  assert.equal(mapCursorMembership("free"), null);
+  assert.equal(mapCursorMembership("enterprise"), null);
 });
 
 test("jsonStringValue reads the first plain string", () => {
@@ -66,10 +78,18 @@ test("detectPlans reads Claude account file and Codex JWT", async () => {
     }),
   );
 
-  const detected = await detectPlans({ home, env: {} });
-  assert.deepEqual(detected.plans, ["claude-max-5x", "chatgpt-plus"]);
+  const detected = await detectPlans({
+    home,
+    env: { CURSOR_MEMBERSHIP_TYPE: "pro_plus" },
+  });
+  assert.deepEqual(detected.plans, [
+    "claude-max-5x",
+    "chatgpt-plus",
+    "cursor-super",
+  ]);
   assert.equal(detected.detections[0]?.source, "claude-code");
   assert.equal(detected.detections[1]?.source, "codex");
+  assert.equal(detected.detections[2]?.source, "cursor");
 });
 
 test("applyDetectedPlans fills plans and by_source.plan; CLI wins", () => {

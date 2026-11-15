@@ -66,6 +66,43 @@ export function addUsage(
   agg.sessions.set(turn.session, session);
 }
 
+/**
+ * Session span with a synthetic token weight (Cursor transcripts have no
+ * usage field). Callers mark the resulting profile tokens as estimated.
+ */
+export function addSessionSpan(
+  agg: UsageAggregate,
+  turn: {
+    session: string;
+    start: number;
+    end: number;
+    model: string;
+    weight?: number;
+  },
+  offsetMinutes: number,
+) {
+  const start = Math.min(turn.start, turn.end);
+  const end = Math.max(turn.start, turn.end);
+  if (!(end > start)) return;
+  const weight = Math.max(1, Math.round(turn.weight ?? 1));
+  const tokens: TokenSum = {
+    input: 0,
+    output: weight,
+    cacheRead: 0,
+    cacheWrite: 0,
+  };
+  addTokens(bucket(dayModels(agg, start, offsetMinutes), turn.model), tokens);
+  const session = agg.sessions.get(turn.session) ?? {
+    models: new Map<string, TokenSum>(),
+    start,
+    end,
+  };
+  addTokens(bucket(session.models, turn.model), tokens);
+  session.start = Math.min(session.start, start);
+  session.end = Math.max(session.end, end);
+  agg.sessions.set(turn.session, session);
+}
+
 function dayModels(agg: UsageAggregate, at: number, offsetMinutes: number) {
   const date = localDay(at, offsetMinutes);
   const models = agg.daily.get(date) ?? new Map<string, TokenSum>();

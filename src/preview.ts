@@ -74,6 +74,14 @@ const WARNING_ES: Record<string, string> = {
     "Lectura de Codex experimental: el formato del rollout no está confirmado aquí.",
   codex_cache_write_unreported:
     "Codex no anota la caché creada. Ese campo queda a 0 y los tokens quedan estimados.",
+  cursor_experimental:
+    "Lectura de Cursor experimental: horas desde metadatos de agent-transcripts / ai-tracking, sin leer el chat.",
+  cursor_tokens_synthetic:
+    "Cursor no expone tokens locales; el peso por modelo es sintético y queda estimado.",
+  cursor_from_transcripts:
+    "Horas de Cursor estimadas desde agent-transcripts (birthtime→mtime).",
+  cursor_from_tracking:
+    "Horas de Cursor estimadas desde ~/.cursor/ai-tracking (hashes, sin cuerpos).",
   plan_detect_invalid_profile:
     "Se detectó un plan local, pero el perfil no validó al aplicarlo; se deja sin ese plan.",
 };

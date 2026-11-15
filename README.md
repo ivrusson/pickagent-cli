@@ -55,7 +55,8 @@ Todos los agentes que detecta ccusage, por defecto.
 2. El JSON `--by-agent` se parte por harness. Los totales van en las métricas del perfil y el desglose en `by_source` (horas, sesiones, procedencia por fuente).
 3. Si ccusage no arranca o no valida, el parser propio lee `~/.claude/projects/**/*.jsonl` (y `~/.config/claude`). `CLAUDE_CONFIG_DIR` sustituye esas rutas.
 4. Si hay rollouts locales de Codex y ccusage no aportó Codex, se fusionan con el perfil.
-5. Planes (sin red): lee el tier de Claude en `~/.claude.json` / credenciales y el `chatgpt_plan_type` del JWT en `~/.codex/auth.json`, los mapea a slugs del catálogo (`claude-pro`, `chatgpt-plus`, …) y los escribe en `plans` y `by_source.*.plan`. `--plan` sustituye la detección. No se suben tokens ni correo.
+5. Si hay agent-transcripts o `ai-tracking` de Cursor y ccusage no aportó Cursor, se fusionan (horas estimadas; sin leer el texto del chat).
+6. Planes (sin red): lee el tier de Claude en `~/.claude.json` / credenciales, el `chatgpt_plan_type` del JWT en `~/.codex/auth.json` y el `stripeMembershipType` de Cursor en `state.vscdb`, los mapea a slugs del catálogo (`claude-pro`, `chatgpt-plus`, `cursor-super`, …) y los escribe en `plans` y `by_source.*.plan`. `--plan` sustituye la detección. No se suben tokens ni correo.
 
 ccusage no es de pickagent. Es código de terceros y cada ejecución lo resuelve `npx` como `ccusage@latest`, sin versión fijada.
 
