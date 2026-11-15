@@ -18,15 +18,8 @@ test("readCursorUsage builds sessions from transcript mtimes", async () => {
   // 2026-10-05 08:00–10:00 UTC
   const start = new Date("2026-10-05T08:00:00.000Z");
   const end = new Date("2026-10-05T10:00:00.000Z");
-  await utimes(file, end, end);
-  // birthtime is not always settable; force via atime/mtime and accept ≥1h
-  // by also touching a second write after start window if needed.
-  try {
-    const { utimes: utimesSync } = await import("node:fs");
-    utimesSync(file, start, end);
-  } catch {
-    // platform may ignore birthtime; span still uses mtime as end
-  }
+  // birthtime is not settable; the span uses mtime as its end.
+  await utimes(file, start, end);
 
   const bounds = {
     start: Date.parse("2026-10-01T00:00:00.000Z"),
