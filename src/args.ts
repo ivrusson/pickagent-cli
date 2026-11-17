@@ -14,7 +14,10 @@ en el fragmento de la URL; no se sube.
 Sin --plan, intenta leer el plan local de Claude (~/.claude.json), de
 Codex (claim chatgpt_plan_type en ~/.codex/auth.json) y de Cursor
 (stripeMembershipType en state.vscdb) y lo mete en \`plans\` y en
-\`by_source.*.plan\`. No llama a la red ni sube tokens.
+\`by_source.*.plan\`. Si faltan planes o importes, en terminal
+interactiva pregunta (plan, importe, moneda, ciclo) y guarda la respuesta
+en ~/.pickagent/scanner.json para el siguiente escaneo. No llama a la red
+ni sube tokens.
 
 Uso
   pickagent scan [opciones]

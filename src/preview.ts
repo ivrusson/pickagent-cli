@@ -84,6 +84,10 @@ const WARNING_ES: Record<string, string> = {
     "Horas de Cursor estimadas desde ~/.cursor/ai-tracking (hashes, sin cuerpos).",
   plan_detect_invalid_profile:
     "Se detectó un plan local, pero el perfil no validó al aplicarlo; se deja sin ese plan.",
+  plan_price_missing:
+    "Falta el importe declarado de un plan; el comparador usará el precio del catálogo.",
+  plan_price_invalid:
+    "Los importes declarados no validaron; se omiten del perfil.",
 };
 
 const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 });

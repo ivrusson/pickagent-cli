@@ -27,6 +27,7 @@ import {
   applyDetectedPlans,
   detectPlans,
 } from "./detect-plans";
+import { withDeclaredPlans } from "./plan-interview";
 import { readCursorUsage } from "./cursor-usage";
 import { noteLines, renderPreview } from "./preview";
 import { localDay, toReports } from "./reports";
@@ -377,23 +378,26 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
     io,
     assembled.warnings,
   );
-  const url = verdictUrl(args.baseUrl, profileToHash(enriched.profile));
+  const declared = await withDeclaredPlans(enriched.profile, args, io);
+  const profile = declared.profile;
+  const scanWarnings = [...enriched.warnings, ...declared.warnings];
+  const url = verdictUrl(args.baseUrl, profileToHash(profile));
   if (args.json) {
-    io.stdout(`${JSON.stringify(enriched.profile, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(profile, null, 2)}\n`);
     if (
       args.codex ||
-      enriched.warnings.some(
+      scanWarnings.some(
         (warning) =>
           warning.includes("ccusage") || warning.startsWith("plan_"),
       )
     ) {
-      for (const line of noteLines(enriched.warnings)) io.stderr(`${line}\n`);
+      for (const line of noteLines(scanWarnings)) io.stderr(`${line}\n`);
     }
   } else {
     io.stdout(
-      `${renderPreview(enriched.profile, {
+      `${renderPreview(profile, {
         url,
-        warnings: enriched.warnings,
+        warnings: scanWarnings,
         scannedAt: localDay(io.now.getTime(), offset),
         reader: assembled.reader,
       })}\n`,
