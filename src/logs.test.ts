@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { encodeProfile, profileToHash } from "../../../src/lib/engine";
+import { encodeProfile, profileToHash } from "./profile";
 import { assembleProfile } from "./assemble";
 import { readClaudeLogs } from "./claude-jsonl";
 import { readCodexLogs } from "./codex-rollout";

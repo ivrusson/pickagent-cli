@@ -4,7 +4,7 @@ import {
   parseProfile,
   type DeclaredPlanPrice,
   type Profile,
-} from "../../../src/lib/engine";
+} from "./profile";
 import type { ScanArgs } from "./args";
 import {
   declaredPrice,

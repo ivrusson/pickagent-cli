@@ -9,7 +9,7 @@ import {
   type Issue,
   type Profile,
   type Source,
-} from "../../../src/lib/engine";
+} from "./profile";
 import {
   boundsOf,
   HELP,

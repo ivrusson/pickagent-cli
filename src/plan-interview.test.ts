@@ -3,8 +3,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parseProfile, type Profile } from "../../../src/lib/engine";
-import { orchestrator } from "../../../src/lib/engine/fixtures/profiles";
+import { parseProfile, type Profile } from "./profile";
+import { orchestrator } from "./profile/fixtures/orchestrator";
 import { withDeclaredPlans } from "./plan-interview";
 import {
   declaredPrice,

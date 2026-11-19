@@ -11,9 +11,9 @@ Hace falta Node 20 o superior. Windows: sin probar.
 En una máquina que no tiene el repositorio:
 
 ```bash
-npx pickagent scan
-npx pickagent scan --period 2026-10 --plan claude-pro
-npx pickagent scan --help
+npx @pickagent/cli scan
+npx @pickagent/cli scan --period 2026-10 --plan claude-pro
+npx @pickagent/cli scan --help
 ```
 
 `npx` descarga el paquete y lo ejecuta ahí. No se instala en un proyecto.
@@ -35,14 +35,16 @@ npx pickagent scan --help
 Por defecto se mezclan todos los harnesses. `--codex` limita la lectura a Codex.
 `--plan` sustituye la detección automática de planes.
 
-Desarrollo, dentro del repositorio:
+Desde un clon de este repositorio:
 
 ```bash
-npm run scan:build
-node packages/scanner/dist/cli.js scan --period 2026-10 --plan claude-pro
+npm ci
+npm run build
+node dist/cli.js scan --period 2026-10 --plan claude-pro
+npm test
 ```
 
-Sin empaquetar: `npm run scan:dev -- scan --help`.
+Sin empaquetar: `npx tsx src/cli.ts scan --help`.
 
 ## Qué lee
 
@@ -71,7 +73,7 @@ ccusage no es de pickagent. Es código de terceros y cada ejecución lo resuelve
 
 De cada línea de Claude se copian, como números u horas, solo esto: marca de tiempo, id de modelo, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` y el id de sesión (ya hasheado). Las líneas que no parecen un registro `assistant` con `usage` o `rate_limit` no se parsean.
 
-Las horas del perfil van en bloques de una hora (se trunca a la hora local, igual que el motor). No se guardan minutos de reloj. La mediana de sesión sí va en minutos, porque el esquema lo pide, redondeada a un minuto.
+Las horas del perfil van en bloques de una hora (se trunca a la hora local). No se guardan minutos de reloj. La mediana de sesión sí va en minutos, porque el esquema lo pide, redondeada a un minuto.
 
 La salida de ccusage se filtra antes de usarla: se quedan fechas, modelos, tokens y las banderas `isGap` / `isActive`. Se tiran costes, ids de sesión, rutas y la agrupación por proyecto (las claves de `projects` no se copian).
 
@@ -84,11 +86,7 @@ Solo dos salidas de red:
 
 No hay más HTTP. No hay base de datos.
 
-Para ver esas llamadas: en el repositorio, `npm run scan:smoke -- --trace`. El script anota cada `npx` que lanza el proceso y explica cómo mirar los sockets con `tcpdump`. El contenedor se llama `pickagent-smoke-<pid>`, el pid del script.
-
-El smoke por defecto usa `--network none`. No descarga ccusage y no ejercita el camino en el que ccusage responde bien. Comprueba el parser local y que el paquete no abre otra conexión. `--trace` deja la red abierta.
-
-Fuera del repositorio, con el paquete ya descargado, en Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx pickagent scan --no-open`. `strace` es solo de Linux; en macOS no existe. La única conexión esperada es la de `npx` al bajar `ccusage`. Con `--no-open` el navegador no se abre.
+Para ver esas llamadas, en Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx @pickagent/cli scan --no-open`. `strace` es solo de Linux; en macOS no existe. La única conexión esperada es la de `npx` al bajar `ccusage`. Con `--no-open` el navegador no se abre.
 
 ## Bloqueos de Claude (parser local)
 
@@ -138,8 +136,18 @@ El perfil pasa por `parseProfile` antes de usarse. Si no cumple el esquema, se i
 
 ## Cómo auditarlo
 
-El código cabe en `packages/scanner/src`. El motor no se modifica: se importa `src/lib/engine` y esbuild lo mete en `dist/cli.js` junto con Zod. No hay dependencias de runtime en este paquete.
+El código está en `src/`. El contrato del perfil (`pickagent.profile/v1`, su parse, su encode y el paso de los informes de uso a ese perfil) está en `src/profile/`. esbuild lo mete en `dist/cli.js` junto con Zod. No hay dependencias de runtime: el paquete publicado es ese archivo, este README y la licencia.
 
 Busca `fetch(`, `http.request`, `net.connect` y claves: no deberían aparecer, salvo la lista blanca de variables que sí se pasan a ccusage. La única ejecución externa es `npx ccusage@latest` y el `open` / `xdg-open` del sistema. En Windows el hijo no arranca `npx.cmd` a pelo (Node 20.12 o superior lo rechaza) y la URL del navegador va entre comillas. Windows: sin probar.
 
-En una máquina limpia, `npm run scan:smoke` (`scripts/scanner/smoke.sh`) ejecuta `npx pickagent scan --help` y un `scan --json --no-open` contra logs de fixture, dentro de contenedores `node:20` y `node:22`. Por defecto usa el `npm pack` local, antes de publicar. `npm run scan:smoke -- --published` usa `npx pickagent@<versión>` del registro.
+En un clon limpio: `npm ci && npm run build && node dist/cli.js scan --help && npm test`.
+
+## Por qué el código es público
+
+El perfil no se sube. Viaja en el fragmento `#p=` de la URL, y el navegador no envía el fragmento al servidor. El repositorio es público para que cualquiera pueda comprobarlo: el escáner no hace `fetch` del perfil, no abre más red que la de `npx` al resolver `ccusage` y la de abrir el navegador, y el esquema de `src/profile/` no tiene sitio para el texto de las conversaciones. La página del veredicto lee ese fragmento en el navegador. El cálculo del veredicto no está en este repositorio.
+
+## Cómo se publica
+
+No hace falta un token de npm. Al empujar un tag `vX.Y.Z` cuyo `X.Y.Z` coincida con `version` en `package.json`, GitHub Actions (`.github/workflows/release.yml`) instala dependencias, construye, ejecuta los tests y publica `@pickagent/cli` con `npm publish --provenance --access public`. La procedencia usa el OIDC de GitHub (`id-token: write`), así que el paquete en npm queda ligado a este repositorio y a ese commit.
+
+Antes del primer tag hay que dar de alta el repositorio como trusted publisher del paquete en npmjs.com (workflow `release.yml`). El tag lo pone una persona; este repositorio no se publica solo.

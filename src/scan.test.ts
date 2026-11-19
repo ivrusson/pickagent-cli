@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parseProfile } from "../../../src/lib/engine";
+import { parseProfile } from "./profile";
 import {
   buildNpxSpawn,
   ccusageArgv,

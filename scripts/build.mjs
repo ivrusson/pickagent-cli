@@ -11,9 +11,7 @@ let esbuild;
 try {
   esbuild = require("esbuild");
 } catch {
-  console.error(
-    "esbuild is not installed. From the repository root, run npm ci, then retry.",
-  );
+  console.error("esbuild is not installed. Run npm ci, then retry.");
   process.exit(1);
 }
 
@@ -21,7 +19,7 @@ const outfile = join(packageRoot, "dist", "cli.js");
 await mkdir(dirname(outfile), { recursive: true });
 
 function zodLicense() {
-  const licensePath = join(packageRoot, "..", "..", "node_modules", "zod", "LICENSE");
+  const licensePath = join(packageRoot, "node_modules", "zod", "LICENSE");
   if (!existsSync(licensePath)) {
     return "zod (https://github.com/colinhacks/zod) is bundled under the MIT License.";
   }

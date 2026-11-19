@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import type { CcusageReports } from "../../../src/lib/engine/ccusage";
+import type { CcusageReports } from "./profile/ccusage";
 
 /*
  * Unified ccusage reports (`daily` / `session`) include every detected agent.

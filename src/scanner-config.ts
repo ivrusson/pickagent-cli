@@ -5,7 +5,7 @@ import {
   DECLARED_PROVENANCE,
   DeclaredPlanPriceSchema,
   type DeclaredPlanPrice,
-} from "../../../src/lib/engine";
+} from "./profile";
 
 /** Local answers the scanner remembers between runs (under `~/.pickagent/`). */
 export type ScannerConfig = {

@@ -1,4 +1,4 @@
-import type { CcusageReports } from "../../../src/lib/engine/ccusage";
+import type { CcusageReports } from "./profile/ccusage";
 import type { LimitHit } from "./limit-text";
 
 export type TokenSum = {

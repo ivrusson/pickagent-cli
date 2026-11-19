@@ -1,4 +1,4 @@
-import type { Profile, Source } from "../../../src/lib/engine";
+import type { Profile, Source } from "./profile";
 
 const SOURCE_ES: Record<Source, string> = {
   "claude-code": "Claude Code",

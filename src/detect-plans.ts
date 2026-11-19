@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Source } from "../../../src/lib/engine";
+import type { Source } from "./profile";
 import { CURSOR_MEMBERSHIP_KEY, cursorStateDbPath } from "./cursor-paths";
 import { readSqliteItemValue } from "./cursor-sqlite";
 
