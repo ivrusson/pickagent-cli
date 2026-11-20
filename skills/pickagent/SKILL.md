@@ -3,9 +3,9 @@ name: pickagent
 description: >-
   Compare AI subscription plans from real local usage. Use when the user asks
   which plan to pay for, if an upgrade is worth it, cost vs limits, or hitting
-  quotas — in Spanish or English. Examples: «¿qué plan de IA me conviene?»,
-  «¿me compensa Max?», «which AI plan should I pay for», «me quedo sin límite»,
-  «Claude Pro vs API», «Codex usage limits».
+  quotas — in Spanish or English. Examples: "which AI plan should I pay for",
+  "is Max worth it", "I'm out of quota", "Claude Pro vs API",
+  "Codex usage limits".
 ---
 
 # pickagent scanner
@@ -41,7 +41,7 @@ Add flags from what they told you:
 | `--no-open`        | Do not open a browser.                                                                 |
 | `--json`           | Print `pickagent.profile/v1` on stdout (pair with `--no-open` for in-agent follow-up). |
 
-After a successful run, summarize the profile in plain language: agent hours, busy windows, model mix, and `current_plan_ids` / provenance (`measured` vs `estimated`). Offer the verdict URL the CLI printed (`https://pickagent.dev/es/veredicto#p=…`).
+After a successful run, summarize the profile in plain language: agent hours, busy windows, model mix, and `current_plan_ids` / provenance (`measured` vs `estimated`). Offer the verdict URL the CLI printed (`https://pickagent.dev/en/veredicto#p=…`).
 
 ## Browser-free path
 

@@ -327,7 +327,7 @@ export function parseProfile(input: unknown): ProfileResult {
   return { ok: false, issues: toIssues(result.error) };
 }
 
-/** Average month length used to normalise ranges to «per month». */
+/** Average month length used to normalise ranges to "per month". */
 export const DAYS_PER_MONTH = 30.44;
 
 /** Agent-hours per month (raw value for calendar months, scaled for ranges). */

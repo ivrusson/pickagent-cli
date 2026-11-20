@@ -41,7 +41,7 @@ test("plan slugs and base url are checked", () => {
   assert.equal(parsed.ok && !parsed.help && parsed.args.baseUrl, "https://example.com/app");
   assert.equal(
     verdictUrl("https://pickagent.dev", "#p=1.abc"),
-    "https://pickagent.dev/es/veredicto#p=1.abc",
+    "https://pickagent.dev/en/veredicto#p=1.abc",
   );
 });
 

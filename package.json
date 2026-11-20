@@ -1,7 +1,7 @@
 {
   "name": "@pickagent/cli",
   "version": "0.1.0",
-  "description": "Lee logs locales de uso y abre el veredicto de pickagent sin subir el perfil.",
+  "description": "Reads local usage logs and opens the pickagent verdict without uploading the profile.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -15,7 +15,7 @@
   "engines": {
     "node": ">=20"
   },
-  "homepage": "https://pickagent.dev/es/escaner",
+  "homepage": "https://pickagent.dev/en/escaner",
   "bugs": {
     "url": "https://github.com/ivrusson/pickagent-cli/issues"
   },

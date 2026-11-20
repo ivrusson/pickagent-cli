@@ -1,61 +1,61 @@
-# Skill pickagent (PA-033)
+# pickagent skill (PA-033)
 
-Skill de agente para comparar planes de IA a partir del uso local medido por el escáner de [pickagent](https://pickagent.dev).
+Agent skill for comparing AI plans from local usage measured by the [pickagent](https://pickagent.dev) scanner.
 
-## Qué hace
+## What it does
 
-Cuando preguntas cosas como «¿qué plan de IA me conviene?», «¿me compensa Max?» o «which AI plan should I pay for», el agente:
+When you ask things like "which AI plan should I pay for", "is Max worth it", or "I'm out of quota", the agent:
 
-1. Te explica qué lee el escáner (solo agregados, nunca conversaciones).
-2. Tras tu confirmación, ejecuta `npx @pickagent/cli scan` con los flags que toquen.
-3. Te resume el perfil y abre el veredicto en el navegador, o usa el MCP público si prefieres no abrirlo.
+1. Explains what the scanner reads (aggregates only, never conversations).
+2. After you confirm, runs `npx @pickagent/cli scan` with the flags that apply.
+3. Summarizes the profile and opens the verdict in the browser, or uses the public MCP if you would rather not open it.
 
-## Paquete npm
+## npm package
 
-El comando es `npx @pickagent/cli scan`. No hace falta clonar nada para ejecutarlo. Desde un clon de este repositorio, `npm ci && npm run build` y `node dist/cli.js scan`.
+The command is `npx @pickagent/cli scan`. You do not need to clone anything to run it. From a clone of this repository, `npm ci && npm run build` and `node dist/cli.js scan`.
 
-## Instalación — Claude Code
+## Install — Claude Code
 
-Copia o enlaza esta carpeta en tu skills de usuario:
+Copy or link this folder into your user skills:
 
 ```bash
 mkdir -p ~/.claude/skills
 ln -s "$(pwd)/skills/pickagent" ~/.claude/skills/pickagent
 ```
 
-O clónala desde GitHub:
+Or clone it from GitHub:
 
 ```bash
 git clone https://github.com/ivrusson/pickagent-cli.git /tmp/pickagent-cli
 ln -s /tmp/pickagent-cli/skills/pickagent ~/.claude/skills/pickagent
 ```
 
-También puedes empaquetarla como plugin de Claude Code apuntando a `skills/pickagent/`.
+You can also package it as a Claude Code plugin pointing at `skills/pickagent/`.
 
-## Instalación — Codex
+## Install — Codex
 
 ```bash
 mkdir -p ~/.codex/skills/pickagent
 cp -R skills/pickagent/* ~/.codex/skills/pickagent/
 ```
 
-Codex carga `~/.codex/skills/<name>/SKILL.md`.
+Codex loads `~/.codex/skills/<name>/SKILL.md`.
 
-## MCP opcional
+## Optional MCP
 
-Para simular sin navegador o explorar planes después del escaneo:
+To simulate without a browser, or to explore plans after the scan:
 
 - Claude Code: `claude mcp add --transport http pickagent https://pickagent.dev/api/mcp`
 - Codex: `codex mcp add pickagent --url https://pickagent.dev/api/mcp`
 
-Detalle en [references/mcp.md](references/mcp.md).
+Details in [references/mcp.md](references/mcp.md).
 
-## Contenido
+## Contents
 
-| Archivo                           | Uso                                          |
-| --------------------------------- | -------------------------------------------- |
-| `SKILL.md`                        | Instrucciones del agente (cuerpo en inglés). |
-| `references/mcp.md`               | Conexión MCP y herramientas públicas.        |
-| `references/privacy-and-flags.md` | Contrato de privacidad y flags del CLI.      |
+| File                              | Use                                      |
+| --------------------------------- | ---------------------------------------- |
+| `SKILL.md`                        | Agent instructions (body in English).    |
+| `references/mcp.md`               | MCP connection and public tools.         |
+| `references/privacy-and-flags.md` | Privacy contract and CLI flags.          |
 
-No hay scripts ni binarios en esta skill; solo documentación.
+This skill has no scripts or binaries; documentation only.

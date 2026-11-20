@@ -7,7 +7,7 @@ export async function main(argv: string[]): Promise<number> {
     return await runScan(argv, realIo());
   } catch {
     process.stderr.write(
-      "pickagent: error inesperado. No se abre el navegador.\n",
+      "pickagent: unexpected error. The browser stays closed.\n",
     );
     return 1;
   }

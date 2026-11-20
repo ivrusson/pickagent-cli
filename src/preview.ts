@@ -1,14 +1,14 @@
 import type { Profile, Source } from "./profile";
 
-const SOURCE_ES: Record<Source, string> = {
+const SOURCE_LABELS: Record<Source, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
   copilot: "Copilot",
   "gemini-cli": "Gemini CLI",
   opencode: "OpenCode",
-  "chat-interview": "entrevista",
-  manual: "a mano",
+  "chat-interview": "interview",
+  manual: "manual",
   amp: "Amp",
   droid: "Droid",
   codebuff: "Codebuff",
@@ -23,10 +23,10 @@ const SOURCE_ES: Record<Source, string> = {
   "grok-cli": "Grok CLI",
   zcode: "ZCode",
   cline: "Cline",
-  "other-cli": "otro CLI",
+  "other-cli": "other CLI",
 };
 
-const MODEL_ES: Record<string, string> = {
+const MODEL_LABELS: Record<string, string> = {
   "claude-opus": "Opus",
   "claude-sonnet": "Sonnet",
   "claude-haiku": "Haiku",
@@ -42,66 +42,66 @@ const MODEL_ES: Record<string, string> = {
   glm: "GLM",
   mistral: "Mistral",
   composer: "Composer",
-  other: "otro",
+  other: "other",
   "claude-fable": "Fable",
   minimax: "MiniMax",
 };
 
 const WEEKDAYS = [
-  "lunes",
-  "martes",
-  "miércoles",
-  "jueves",
-  "viernes",
-  "sábado",
-  "domingo",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
 ] as const;
 
-const WARNING_ES: Record<string, string> = {
-  ccusage_failed: "ccusage no respondió. Esta lectura usa el parser local.",
+const WARNING_TEXT: Record<string, string> = {
+  ccusage_failed: "ccusage did not respond. This read uses the local parser.",
   ccusage_incomplete:
-    "ccusage no llegó a un perfil válido. Esta lectura usa el parser local.",
+    "ccusage did not produce a valid profile. This read uses the local parser.",
   no_limit_hits:
-    "Esta lectura no trae bloqueos: ccusage no informa de cuándo se alcanza el tope.",
+    "This read has no blocks: ccusage does not report when the cap is hit.",
   tokens_split_evenly:
-    "Varios modelos venían sin desglose: los tokens se reparten a partes iguales y quedan estimados.",
+    "Several models had no breakdown: tokens are split evenly and marked estimated.",
   agent_hours_from_blocks:
-    "Las horas salen del reloj de las ventanas, no de las sesiones, y quedan estimadas.",
-  sessions_without_times: "Hay sesiones sin hora de inicio y fin.",
-  no_tokens: "No hay tokens en el periodo.",
-  no_times: "No hay sesiones con inicio y fin distintos. No invento las horas.",
+    "Hours come from window clocks, not from sessions, and stay estimated.",
+  sessions_without_times: "Some sessions have no start and end time.",
+  no_tokens: "No tokens in this period.",
+  no_times: "No sessions with a distinct start and end. Hours are not invented.",
   codex_experimental:
-    "Lectura de Codex experimental: el formato del rollout no está confirmado aquí.",
+    "Experimental Codex read: the rollout format is not confirmed here.",
   codex_cache_write_unreported:
-    "Codex no anota la caché creada. Ese campo queda a 0 y los tokens quedan estimados.",
+    "Codex does not record cache creation. That field stays 0 and tokens stay estimated.",
   cursor_experimental:
-    "Lectura de Cursor experimental: horas desde metadatos de agent-transcripts / ai-tracking, sin leer el chat.",
+    "Experimental Cursor read: hours from agent-transcripts / ai-tracking metadata, without reading chat.",
   cursor_tokens_synthetic:
-    "Cursor no expone tokens locales; el peso por modelo es sintético y queda estimado.",
+    "Cursor does not expose local tokens; model weight is synthetic and stays estimated.",
   cursor_from_transcripts:
-    "Horas de Cursor estimadas desde agent-transcripts (birthtime→mtime).",
+    "Cursor hours estimated from agent-transcripts (birthtime→mtime).",
   cursor_from_tracking:
-    "Horas de Cursor estimadas desde ~/.cursor/ai-tracking (hashes, sin cuerpos).",
+    "Cursor hours estimated from ~/.cursor/ai-tracking (hashes, no bodies).",
   plan_detect_invalid_profile:
-    "Se detectó un plan local, pero el perfil no validó al aplicarlo; se deja sin ese plan.",
+    "A local plan was detected, but the profile failed validation when it was applied; that plan is left off.",
   plan_price_missing:
-    "Falta el importe declarado de un plan; el comparador usará el precio del catálogo.",
+    "A plan is missing its declared amount; the comparator will use the catalog price.",
   plan_price_invalid:
-    "Los importes declarados no validaron; se omiten del perfil.",
+    "Declared amounts failed validation; they are omitted from the profile.",
 };
 
-const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 });
-const percent = new Intl.NumberFormat("es-ES", {
+const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const percent = new Intl.NumberFormat("en-US", {
   style: "percent",
   maximumFractionDigits: 0,
 });
 
 function how(provenance: string): string {
-  return provenance === "measured" ? "medido" : "estimado";
+  return provenance === "measured" ? "measured" : "estimated";
 }
 
 function labelSource(source: string): string {
-  return SOURCE_ES[source as Source] ?? source;
+  return SOURCE_LABELS[source as Source] ?? source;
 }
 
 function sourcesLine(profile: Profile): string {
@@ -123,7 +123,7 @@ export function noteLines(warnings: string[]): string[] {
     if (warning.startsWith("plan_unmapped:")) {
       const [, source, raw] = warning.split(":");
       lines.push(
-        `Plan local de ${labelSource(source ?? "")} no mapeado al catálogo (${raw ?? "?"}). Usa --plan.`,
+        `Local ${labelSource(source ?? "")} plan is not in the catalog (${raw ?? "?"}). Use --plan.`,
       );
       continue;
     }
@@ -133,7 +133,7 @@ export function noteLines(warnings: string[]): string[] {
     const prefix = warning.includes(":")
       ? `${labelSource(warning.slice(0, warning.indexOf(":")))}: `
       : "";
-    lines.push(`${prefix}${WARNING_ES[bare] ?? WARNING_ES[warning] ?? warning}`);
+    lines.push(`${prefix}${WARNING_TEXT[bare] ?? WARNING_TEXT[warning] ?? warning}`);
   }
   return lines;
 }
@@ -145,10 +145,10 @@ export function renderPreview(
   const sources = sourcesLine(profile);
   const lines = [
     "pickagent",
-    `Periodo ${profile.period}. Fuentes ${sources}. Lectura ${meta.scannedAt}.`,
-    `Cómo se leyó: ${meta.reader}.`,
+    `Period ${profile.period}. Sources ${sources}. Read ${meta.scannedAt}.`,
+    `How it was read: ${meta.reader}.`,
     "",
-    `Horas-agente: ${number.format(profile.agent_hours.value)} (${how(profile.agent_hours.provenance)}, total, ${profile.period})`,
+    `Agent-hours: ${number.format(profile.agent_hours.value)} (${how(profile.agent_hours.provenance)}, total, ${profile.period})`,
   ];
   if (profile.by_source && Object.keys(profile.by_source).length > 0) {
     const parts = (Object.entries(profile.by_source) as [
@@ -163,48 +163,48 @@ export function renderPreview(
       .sort((a, b) => b[1].agent_hours - a[1].agent_hours)
       .map(([source, slice]) => {
         const sessions =
-          slice.sessions != null ? `, ${number.format(slice.sessions)} ses.` : "";
+          slice.sessions != null ? `, ${number.format(slice.sessions)} sess.` : "";
         const plan = slice.plan ? `, plan ${slice.plan}` : "";
         return `${labelSource(source)} ${number.format(slice.agent_hours)} h (${how(slice.provenance)}${sessions}${plan})`;
       });
-    lines.push(`Por harness: ${parts.join(" · ")}`);
+    lines.push(`By harness: ${parts.join(" · ")}`);
   }
   if (profile.active_days) {
     lines.push(
-      `Días activos: ${number.format(profile.active_days.value)} (${how(profile.active_days.provenance)}, ${profile.period})`,
+      `Active days: ${number.format(profile.active_days.value)} (${how(profile.active_days.provenance)}, ${profile.period})`,
     );
   }
   if (profile.sessions) {
     lines.push(
-      `Sesiones: ${number.format(profile.sessions.value.count)}, mediana ${number.format(profile.sessions.value.median_minutes)} min (${how(profile.sessions.provenance)}, ${profile.period})`,
+      `Sessions: ${number.format(profile.sessions.value.count)}, median ${number.format(profile.sessions.value.median_minutes)} min (${how(profile.sessions.provenance)}, ${profile.period})`,
     );
   }
   const models = Object.entries(profile.by_model.value)
-    .map(([model, share]) => `${MODEL_ES[model] ?? model} ${percent.format(share)}`)
+    .map(([model, share]) => `${MODEL_LABELS[model] ?? model} ${percent.format(share)}`)
     .join(", ");
   lines.push(
-    `Modelos: ${models} (${how(profile.by_model.provenance)}, ${profile.period})`,
+    `Models: ${models} (${how(profile.by_model.provenance)}, ${profile.period})`,
   );
   if (profile.blocks) {
     const worst = profile.blocks.value.worst;
     const when = worst
-      ? ` El peor: ${WEEKDAYS[worst.weekday] ?? "día"} a las ${worst.hour} h, espera ${worst.wait_hours} h.`
+      ? ` Worst: ${WEEKDAYS[worst.weekday] ?? "day"} at ${worst.hour}:00, wait ${worst.wait_hours} h.`
       : "";
     lines.push(
-      `Bloqueos: ${number.format(profile.blocks.value.count)}.${when} (${how(profile.blocks.provenance)}, ${profile.period})`,
+      `Blocks: ${number.format(profile.blocks.value.count)}.${when} (${how(profile.blocks.provenance)}, ${profile.period})`,
     );
   }
-  const plans = profile.plans.length ? profile.plans.join(", ") : "ninguno indicado";
-  lines.push(`Planes que pagas hoy: ${plans}.`);
+  const plans = profile.plans.length ? profile.plans.join(", ") : "none given";
+  lines.push(`Plans you pay for today: ${plans}.`);
   const notes = noteLines(meta.warnings);
   if (notes.length) {
-    lines.push("", "Notas:");
+    lines.push("", "Notes:");
     for (const note of notes) lines.push(`- ${note}`);
   }
   lines.push(
     "",
-    "El perfil se queda en tu máquina. Viaja en el fragmento de la URL; el servidor no lo recibe.",
-    "No incluye mensajes, rutas ni nombres de proyecto.",
+    "The profile stays on your machine. It travels in the URL fragment; the server does not receive it.",
+    "It does not include messages, paths, or project names.",
     meta.url,
   );
   return lines.join("\n");

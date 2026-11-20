@@ -35,7 +35,7 @@ import { localDay, toReports } from "./reports";
 const CCUSAGE_READER =
   "npx ccusage@latest daily|session --json --by-agent y blocks --offline --breakdown";
 
-const PROMPT = "¿Abrir el veredicto en el navegador? [s/N] ";
+const PROMPT = "Open the verdict in the browser? [y/N] ";
 
 export type ScanIo = {
   env: NodeJS.ProcessEnv;
@@ -55,20 +55,21 @@ export type ScanIo = {
 };
 
 function accepted(answer: string): boolean {
-  return /^(s|si|sí|y|yes)$/i.test(answer.trim());
+  // y/yes match the English prompt. s/si and s + i-acute still count as yes.
+  return /^(s(?:i|\u00ed)?|y|yes)$/i.test(answer.trim());
 }
 
 function renderFailure(period: string, issues: Issue[], warnings: string[]): string {
-  const lines = [`No hay un perfil válido para ${period}.`];
+  const lines = [`No valid profile for ${period}.`];
   if (issues.length) {
-    lines.push("El perfil no cumple pickagent.profile/v1:");
+    lines.push("The profile does not match pickagent.profile/v1:");
     for (const issue of issues) {
-      lines.push(`- ${issue.path || "(raíz)"}: ${issue.message}`);
+      lines.push(`- ${issue.path || "(root)"}: ${issue.message}`);
     }
   }
   const notes = noteLines(warnings);
   if (notes.length) {
-    lines.push("Notas:");
+    lines.push("Notes:");
     for (const note of notes) lines.push(`- ${note}`);
   }
   return `${lines.join("\n")}\n`;
@@ -91,7 +92,7 @@ async function fromCodexOnly(
   const bounds = boundsOf(args.period, offset);
   if (!bounds) {
     return asAssembled(null, [], "", [
-      { path: "period", message: "periodo inválido" },
+      { path: "period", message: "invalid period" },
     ]);
   }
   const logs = await readCodexLogs(codexHomeDir(io.env, io.home), bounds, offset);
@@ -108,7 +109,7 @@ async function fromCodexOnly(
   });
   return {
     ...assembled,
-    reader: "parser experimental de $CODEX_HOME/sessions/**/rollout-*.jsonl",
+    reader: "experimental parser for $CODEX_HOME/sessions/**/rollout-*.jsonl",
   };
 }
 
@@ -121,7 +122,7 @@ async function fromLocalClaude(
   const bounds = boundsOf(args.period, offset);
   if (!bounds) {
     return asAssembled(null, extraWarnings, "", [
-      { path: "period", message: "periodo inválido" },
+      { path: "period", message: "invalid period" },
     ]);
   }
   const logs = await readClaudeLogs(claudeConfigDirs(io.env, io.home), bounds, offset);
@@ -136,8 +137,8 @@ async function fromLocalClaude(
     extraWarnings,
   });
   const reader = io.env.CLAUDE_CONFIG_DIR
-    ? "parser local (CLAUDE_CONFIG_DIR)"
-    : "parser local de ~/.claude/projects/**/*.jsonl";
+    ? "local parser (CLAUDE_CONFIG_DIR)"
+    : "local parser for ~/.claude/projects/**/*.jsonl";
   return { ...local, reader };
 }
 
@@ -254,7 +255,7 @@ async function fromAllAgents(
   const range = periodRange(args.period);
   if (!range) {
     return asAssembled(null, [], "", [
-      { path: "period", message: "periodo inválido" },
+      { path: "period", message: "invalid period" },
     ]);
   }
   const loaded = await io.loadCcusage({
@@ -295,7 +296,7 @@ async function fromAllAgents(
   return asAssembled(
     merged.profile,
     merged.warnings,
-    `${local.reader}; Codex/Cursor local si hay datos`,
+    `${local.reader}; local Codex/Cursor when data is present`,
   );
 }
 
@@ -342,14 +343,14 @@ async function maybeOpen(args: ScanArgs, io: ScanIo, url: string) {
     args.yes || (args.json ? false : io.isTTY && accepted(await io.prompt(PROMPT)));
   if (!openNow) {
     if (!args.json && !io.isTTY && !args.yes) {
-      io.stderr("No hay terminal interactiva. El veredicto no se abre.\n");
+      io.stderr("No interactive terminal. The verdict stays closed.\n");
     }
     return;
   }
   try {
     await io.open(url);
   } catch {
-    io.stderr("No se pudo abrir el navegador. La URL está en el perfil.\n");
+    io.stderr("Could not open the browser. The URL is in the profile.\n");
   }
 }
 

@@ -4,38 +4,38 @@ const DAY_MS = 86_400_000;
 
 export const DEFAULT_BASE_URL = "https://pickagent.dev";
 
-export const HELP = `pickagent scan — perfil medido, en local
+export const HELP = `pickagent scan — measured profile, on your machine
 
-Lee el uso de todos los agentes que detecta ccusage (Claude Code, Codex,
-OpenCode, Gemini CLI, Copilot, …), construye un perfil con totales y
-desglose por harness (\`by_source\`) y abre el veredicto. El perfil viaja
-en el fragmento de la URL; no se sube.
+Reads usage from every agent ccusage detects (Claude Code, Codex,
+OpenCode, Gemini CLI, Copilot, …), builds a profile with totals and a
+per-harness breakdown (\`by_source\`), and opens the verdict. The profile
+travels in the URL fragment; it is not uploaded.
 
-Sin --plan, intenta leer el plan local de Claude (~/.claude.json), de
-Codex (claim chatgpt_plan_type en ~/.codex/auth.json) y de Cursor
-(stripeMembershipType en state.vscdb) y lo mete en \`plans\` y en
-\`by_source.*.plan\`. Si faltan planes o importes, en terminal
-interactiva pregunta (plan, importe, moneda, ciclo) y guarda la respuesta
-en ~/.pickagent/scanner.json para el siguiente escaneo. No llama a la red
-ni sube tokens.
+Without --plan, it tries to read the local Claude plan (~/.claude.json),
+the Codex plan (chatgpt_plan_type claim in ~/.codex/auth.json), and the
+Cursor plan (stripeMembershipType in state.vscdb), then stores them in
+\`plans\` and \`by_source.*.plan\`. If plans or amounts are missing, an
+interactive terminal asks (plan, amount, currency, billing cycle) and
+saves the answer in ~/.pickagent/scanner.json for the next scan. It does
+not call the network or upload tokens.
 
-Uso
-  pickagent scan [opciones]
+Usage
+  pickagent scan [options]
 
-Opciones
-  --period YYYY-MM     Mes natural. Por defecto, el mes local en curso.
-  --days N             Últimos N días, incluido hoy (1–366).
-  --plan SLUG          Plan que pagas hoy. Se puede repetir. Ej. claude-pro.
-                       Si lo pasas, sustituye a la detección automática.
-  --base-url URL       Origen del veredicto. Por defecto ${DEFAULT_BASE_URL}.
-  --json               Escribe solo el perfil JSON en stdout.
-  --yes                Abre el navegador sin preguntar.
-  --no-open            No abre el navegador.
-  --codex              Solo Codex (rollouts locales; experimental).
-  --help               Esta ayuda.
+Options
+  --period YYYY-MM     Calendar month. Default: the current local month.
+  --days N             Last N days, including today (1–366).
+  --plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
+                       When passed, replaces automatic detection.
+  --base-url URL       Verdict origin. Default ${DEFAULT_BASE_URL}.
+  --json               Write only the JSON profile to stdout.
+  --yes                Open the browser without asking.
+  --no-open            Do not open the browser.
+  --codex              Codex only (local rollouts; experimental).
+  --help               This help.
 
-Por defecto se mezclan todos los harnesses detectados. --codex limita la
-lectura a Codex.
+By default every detected harness is merged. --codex limits the read
+to Codex.
 `;
 
 export type ScanArgs = {
@@ -142,7 +142,7 @@ export function parseArgs(
   if (argv[0] !== "scan") {
     return {
       ok: false,
-      error: `comando desconocido «${argv[0]}». Usa: pickagent scan`,
+      error: `unknown command "${argv[0]}". Use: pickagent scan`,
     };
   }
   const rest = argv.slice(1);
@@ -171,34 +171,34 @@ export function parseArgs(
     else if (flag === "--period") {
       const value = take();
       if (!value || !MONTH_RE.test(value)) {
-        return { ok: false, error: "--period espera YYYY-MM." };
+        return { ok: false, error: "--period expects YYYY-MM." };
       }
       period = value;
     } else if (flag === "--days") {
       const value = take();
       const parsed = value ? parseDays(value) : null;
-      if (parsed == null) return { ok: false, error: "--days espera un entero de 1 a 366." };
+      if (parsed == null) return { ok: false, error: "--days expects an integer from 1 to 366." };
       days = parsed;
     } else if (flag === "--plan") {
       const value = take();
       if (!value || !PLAN_RE.test(value) || value.length > 48) {
-        return { ok: false, error: "--plan espera un slug en minúsculas, como claude-pro." };
+        return { ok: false, error: "--plan expects a lowercase slug, such as claude-pro." };
       }
       plans.push(value);
     } else if (flag === "--base-url") {
       const value = take();
       const base = value ? normalizeBaseUrl(value) : null;
-      if (!base) return { ok: false, error: "--base-url espera una URL http(s)." };
+      if (!base) return { ok: false, error: "--base-url expects an http(s) URL." };
       baseUrl = base;
     } else {
-      return { ok: false, error: `opción desconocida «${flag}».` };
+      return { ok: false, error: `unknown option "${flag}".` };
     }
   }
 
   if (period && days != null) {
-    return { ok: false, error: "Usa --period o --days, no los dos." };
+    return { ok: false, error: "Use --period or --days, not both." };
   }
-  if (plans.length > 10) return { ok: false, error: "Como máximo 10 planes." };
+  if (plans.length > 10) return { ok: false, error: "At most 10 plans." };
 
   const resolved =
     period ??
@@ -211,5 +211,5 @@ export function parseArgs(
 }
 
 export function verdictUrl(baseUrl: string, hash: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}/es/veredicto${hash}`;
+  return `${baseUrl.replace(/\/+$/, "")}/en/veredicto${hash}`;
 }

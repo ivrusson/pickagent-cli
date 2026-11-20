@@ -118,8 +118,8 @@ test("a machine without logs exits non-zero and does not throw", async () => {
   const code = await runScan(["scan", "--period", "2026-10", "--json", "--no-open"], scan);
   assert.equal(code, 1);
   assert.equal(scan.out, "");
-  assert.match(scan.err, /No hay un perfil válido/);
-  assert.equal(scan.err.includes("ccusage no informa"), false);
+  assert.match(scan.err, /No valid profile/);
+  assert.equal(scan.err.includes("does not report when the cap is hit"), false);
   assert.equal(scan.opened.length, 0);
 });
 
@@ -161,7 +161,7 @@ test("npx on Windows does not spawn npx.cmd, and start quotes the URL", () => {
   assert.equal(found, npxCli);
   assert.equal(resolveNpxCli(execPath, () => false), null);
 
-  const url = "https://x.example/a%20b/es/veredicto#p=a&b";
+  const url = "https://x.example/a%20b/en/veredicto#p=a&b";
   const open = browserOpenSpawn(url, "win32");
   assert.equal(open.command, "rundll32");
   assert.deepEqual(open.args, ["url.dll,FileProtocolHandler", url]);
@@ -289,8 +289,8 @@ test("--yes opens the verdict URL and a refusal does not", async () => {
   const code = await runScan(["scan", "--period", "2026-10", "--yes"], opened);
   assert.equal(code, 0);
   assert.equal(opened.opened.length, 1);
-  assert.match(opened.opened[0] ?? "", /^https:\/\/pickagent\.dev\/es\/veredicto#p=/);
-  assert.match(opened.out, /medido/);
+  assert.match(opened.opened[0] ?? "", /^https:\/\/pickagent\.dev\/en\/veredicto#p=/);
+  assert.match(opened.out, /measured/);
   assert.match(opened.out, /2026-10/);
 
   const refused = io({ failed: false, reports: { daily, sessions } }, home);

@@ -1,14 +1,14 @@
 # pickagent scan
 
-CLI local. Lee el uso de tus agentes, construye un perfil `pickagent.profile/v1` y abre el veredicto en el navegador. El perfil viaja en el fragmento `#p=` de la URL. No se sube.
+Local CLI. It reads your agents' usage, builds a `pickagent.profile/v1` profile, and opens the verdict in the browser. The profile travels in the `#p=` URL fragment. It is not uploaded.
 
-Página del escáner: https://pickagent.dev/es/escaner
+Scanner page: https://pickagent.dev/en/escaner
 
-## Instalar y usar
+## Install and use
 
-Hace falta Node 20 o superior. Windows: sin probar.
+Requires Node 20 or newer. Windows: untested.
 
-En una máquina que no tiene el repositorio:
+On a machine that does not have this repository:
 
 ```bash
 npx @pickagent/cli scan
@@ -16,26 +16,26 @@ npx @pickagent/cli scan --period 2026-10 --plan claude-pro
 npx @pickagent/cli scan --help
 ```
 
-`npx` descarga el paquete y lo ejecuta ahí. No se instala en un proyecto.
+`npx` downloads the package and runs it there. It is not installed into a project.
 
-## Opciones
+## Options
 
 ```text
---period YYYY-MM     Mes natural. Por defecto, el mes local en curso.
---days N             Últimos N días, incluido hoy (1–366).
---plan SLUG          Plan que pagas hoy. Se puede repetir. Ej. claude-pro.
---base-url URL       Origen del veredicto. Por defecto https://pickagent.dev.
---json               Escribe solo el perfil JSON en stdout.
---yes                Abre el navegador sin preguntar.
---no-open            No abre el navegador.
---codex              Solo Codex (rollouts locales; experimental).
---help               Esta ayuda.
+--period YYYY-MM     Calendar month. Default: the current local month.
+--days N             Last N days, including today (1–366).
+--plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
+--base-url URL       Verdict origin. Default https://pickagent.dev.
+--json               Write only the JSON profile to stdout.
+--yes                Open the browser without asking.
+--no-open            Do not open the browser.
+--codex              Codex only (local rollouts; experimental).
+--help               This help.
 ```
 
-Por defecto se mezclan todos los harnesses. `--codex` limita la lectura a Codex.
-`--plan` sustituye la detección automática de planes.
+By default every harness is merged. `--codex` limits the read to Codex.
+`--plan` replaces automatic plan detection.
 
-Desde un clon de este repositorio:
+From a clone of this repository:
 
 ```bash
 npm ci
@@ -44,110 +44,110 @@ node dist/cli.js scan --period 2026-10 --plan claude-pro
 npm test
 ```
 
-Sin empaquetar: `npx tsx src/cli.ts scan --help`.
+Without packaging: `npx tsx src/cli.ts scan --help`.
 
-## Qué lee
+## What it reads
 
-Todos los agentes que detecta ccusage, por defecto.
+Every agent ccusage detects, by default.
 
-1. `npx --yes ccusage@latest` con tres informes unificados, en paralelo:
+1. `npx --yes ccusage@latest` with three unified reports, in parallel:
    - `daily --json --by-agent --breakdown --no-cost --offline --since YYYY-MM-DD --until YYYY-MM-DD --timezone <IANA>`
-   - `session` con las mismas banderas
-   - `blocks` con `--json --no-cost --offline` y el mismo rango (ventanas de 5 h de Claude)
-2. El JSON `--by-agent` se parte por harness. Los totales van en las métricas del perfil y el desglose en `by_source` (horas, sesiones, procedencia por fuente).
-3. Si ccusage no arranca o no valida, el parser propio lee `~/.claude/projects/**/*.jsonl` (y `~/.config/claude`). `CLAUDE_CONFIG_DIR` sustituye esas rutas.
-4. Si hay rollouts locales de Codex y ccusage no aportó Codex, se fusionan con el perfil.
-5. Si hay agent-transcripts o `ai-tracking` de Cursor y ccusage no aportó Cursor, se fusionan (horas estimadas; sin leer el texto del chat).
-6. Planes (sin red): lee el tier de Claude en `~/.claude.json` / credenciales, el `chatgpt_plan_type` del JWT en `~/.codex/auth.json` y el `stripeMembershipType` de Cursor en `state.vscdb`, los mapea a slugs del catálogo (`claude-pro`, `chatgpt-plus`, `cursor-super`, …) y los escribe en `plans` y `by_source.*.plan`. `--plan` sustituye la detección. No se suben tokens ni correo.
+   - `session` with the same flags
+   - `blocks` with `--json --no-cost --offline` and the same range (Claude 5-hour windows)
+2. The `--by-agent` JSON is split by harness. Totals go into the profile metrics and the breakdown into `by_source` (hours, sessions, provenance per source).
+3. If ccusage fails to start or fails validation, the local parser reads `~/.claude/projects/**/*.jsonl` (and `~/.config/claude`). `CLAUDE_CONFIG_DIR` replaces those paths.
+4. If local Codex rollouts exist and ccusage did not contribute Codex, they are merged into the profile.
+5. If Cursor agent-transcripts or `ai-tracking` exist and ccusage did not contribute Cursor, they are merged (estimated hours; chat text is not read).
+6. Plans (no network): it reads the Claude tier in `~/.claude.json` / credentials, the `chatgpt_plan_type` JWT claim in `~/.codex/auth.json`, and Cursor `stripeMembershipType` in `state.vscdb`, maps them to catalog slugs (`claude-pro`, `chatgpt-plus`, `cursor-super`, …), and writes them to `plans` and `by_source.*.plan`. `--plan` replaces detection. Tokens and email are not uploaded.
 
-ccusage no es de pickagent. Es código de terceros y cada ejecución lo resuelve `npx` como `ccusage@latest`, sin versión fijada.
+ccusage is not part of pickagent. It is third-party code, and each run resolves it with `npx` as `ccusage@latest`, with no pinned version.
 
-`--codex` limita la lectura a los rollouts locales de Codex (experimental).
+`--codex` limits the read to local Codex rollouts (experimental).
 
-## Qué no lee, nunca
+## What it never reads
 
-- El texto de los mensajes, los prompts y el contenido de las herramientas.
-- Rutas, `cwd`, nombres de proyecto y títulos.
-- El id de sesión en claro. Sirve solo para agrupar, y antes se pasa por SHA-256. El hash no entra en el perfil.
-- Claves de API. No se piden. El proceso de ccusage no hereda el entorno: solo recibe `LOG_LEVEL=0` (lo pone el escáner) y, si existen, estas variables: `PATH`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `TZ`, `LANG`, `LC_*`, `TMPDIR`, `TEMP`, `TMP`, `SystemRoot`, `ComSpec`, `PATHEXT`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `npm_config_registry`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `http_proxy`, `https_proxy`, `no_proxy`, `ALL_PROXY`, `npm_config_proxy`, `npm_config_https_proxy`, `npm_config_cafile`, `npm_config_userconfig`, `NODE_EXTRA_CA_CERTS` y `SSL_CERT_FILE`. Los nombres se comparan sin distinguir mayúsculas. No se pasa ninguna variable cuyo nombre termine en `_TOKEN`, `_KEY` o `_SECRET`, ni `npm_config_*auth*`. Si la URL de tu proxy o de tu registry lleva usuario y contraseña, ccusage la recibe. ccusage se ejecuta con tus permisos de usuario, así que puede leer tus archivos, como `~/.npmrc`.
+- Message text, prompts, and tool contents.
+- Paths, `cwd`, project names, and titles.
+- The session id in the clear. It is used only to group rows, and it is hashed with SHA-256 first. The hash does not enter the profile.
+- API keys. They are not requested. The ccusage process does not inherit the environment: it only receives `LOG_LEVEL=0` (set by the scanner) and, when present, these variables: `PATH`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `TZ`, `LANG`, `LC_*`, `TMPDIR`, `TEMP`, `TMP`, `SystemRoot`, `ComSpec`, `PATHEXT`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `npm_config_registry`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `http_proxy`, `https_proxy`, `no_proxy`, `ALL_PROXY`, `npm_config_proxy`, `npm_config_https_proxy`, `npm_config_cafile`, `npm_config_userconfig`, `NODE_EXTRA_CA_CERTS`, and `SSL_CERT_FILE`. Names are compared case-insensitively. No variable whose name ends in `_TOKEN`, `_KEY`, or `_SECRET` is passed, nor `npm_config_*auth*`. If your proxy or registry URL contains a username and password, ccusage receives it. ccusage runs with your user permissions, so it can read your files, such as `~/.npmrc`.
 
-De cada línea de Claude se copian, como números u horas, solo esto: marca de tiempo, id de modelo, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` y el id de sesión (ya hasheado). Las líneas que no parecen un registro `assistant` con `usage` o `rate_limit` no se parsean.
+From each Claude line, only these fields are copied, as numbers or hours: timestamp, model id, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, and the session id (already hashed). Lines that do not look like an `assistant` record with `usage` or `rate_limit` are not parsed.
 
-Las horas del perfil van en bloques de una hora (se trunca a la hora local). No se guardan minutos de reloj. La mediana de sesión sí va en minutos, porque el esquema lo pide, redondeada a un minuto.
+Profile hours are stored in one-hour blocks (truncated to the local hour). Clock minutes are not stored. The session median is in minutes, because the schema requires it, rounded to one minute.
 
-La salida de ccusage se filtra antes de usarla: se quedan fechas, modelos, tokens y las banderas `isGap` / `isActive`. Se tiran costes, ids de sesión, rutas y la agrupación por proyecto (las claves de `projects` no se copian).
+ccusage output is filtered before use: dates, models, tokens, and the `isGap` / `isActive` flags are kept. Costs, session ids, paths, and the project grouping are dropped (`projects` keys are not copied).
 
-## Red
+## Network
 
-Solo dos salidas de red:
+Only two network exits:
 
-- `npx` puede descargar `ccusage@latest` la primera vez. ccusage se lanza con `--offline` para que no pida precios.
-- Abrir el navegador en la URL del veredicto, después de confirmar.
+- `npx` may download `ccusage@latest` the first time. ccusage is launched with `--offline` so it does not request prices.
+- Opening the browser at the verdict URL, after confirmation.
 
-No hay más HTTP. No hay base de datos.
+No other HTTP. No database.
 
-Para ver esas llamadas, en Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx @pickagent/cli scan --no-open`. `strace` es solo de Linux; en macOS no existe. La única conexión esperada es la de `npx` al bajar `ccusage`. Con `--no-open` el navegador no se abre.
+To see those calls on Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx @pickagent/cli scan --no-open`. `strace` is Linux-only; macOS does not have it. The only expected connection is `npx` downloading `ccusage`. With `--no-open` the browser does not open.
 
-## Bloqueos de Claude (parser local)
+## Claude blocks (local parser)
 
-ccusage no dice cuándo te quedas sin cuota (`no_limit_hits`). El parser propio sí, y solo si ccusage no produjo un perfil válido. Es best-effort, sobre el texto que Claude Code escribe en el transcript cuando `error` es `"rate_limit"`.
+ccusage does not say when you run out of quota (`no_limit_hits`). The local parser does, and only when ccusage did not produce a valid profile. It is best-effort, over the text Claude Code writes in the transcript when `error` is `"rate_limit"`.
 
-Cuenta la primera línea si encaja con una de estas:
+The first line counts when it matches one of these:
 
 ```text
 /^You've hit your (?:session|weekly) limit\b/
 /^You've hit your org's monthly spend limit\b/
 ```
 
-No cuenta, aunque el error sea `rate_limit`, un límite transitorio de la API:
+A transient API limit does not count, even when the error is `rate_limit`:
 
 ```text
 /not your usage limit/i
 /temporarily limiting requests/i
 ```
 
-La espera sale de:
+The wait comes from:
 
 ```text
 /\bresets (\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([^)]+)\))?/i
 ```
 
-La frase no trae fecha. La espera es la próxima vez que el reloj marca esa hora en la zona del paréntesis, redondeada a horas. En un tope semanal o mensual eso se queda corto. Si la zona falta o no es IANA, el bloqueo cuenta y `wait_hours` se omite. El texto de la frase no se guarda.
+The sentence has no date. The wait is the next time the clock reaches that hour in the zone inside the parentheses, rounded to hours. For a weekly or monthly cap that undershoots. If the zone is missing or is not IANA, the block still counts and `wait_hours` is omitted. The sentence text is not stored.
 
-Los registros `assistant` repetidos con el mismo `message.id` cuentan una vez: Claude Code escribe la misma respuesta bajo varios `uuid`.
+Repeated `assistant` records with the same `message.id` count once: Claude Code writes the same response under several `uuid` values.
 
 ## Codex (`--codex`, experimental)
 
-No hay un directorio `~/.codex/sessions` en la máquina donde se escribió este lector, así que el formato no está confirmado aquí. La forma esperada es la que documentan lectores de terceros: `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` y `archived_sessions/**/rollout-*.jsonl` (`CODEX_HOME` o `~/.codex`).
+The machine where this reader was written had no `~/.codex/sessions` directory, so the format is not confirmed here. The expected shape is what third-party readers document: `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` and `archived_sessions/**/rollout-*.jsonl` (`CODEX_HOME` or `~/.codex`).
 
-Un archivo entra solo si la primera línea es `session_meta` y `payload.originator` contiene `codex`. Las líneas `response_item` (prompts, herramientas, rutas) no se parsean.
+A file is included only when the first line is `session_meta` and `payload.originator` contains `codex`. `response_item` lines (prompts, tools, paths) are not parsed.
 
-Se usan `turn_context.payload.model` y `event_msg` con `payload.type === "token_count"` e `info.last_token_usage`. El acumulado `total_token_usage` se ignora. `input_tokens` incluye la parte cacheada, así que la entrada no cacheada es `input_tokens - cached_input_tokens`, la lectura de caché es `cached_input_tokens` y la salida suma `output_tokens` y `reasoning_output_tokens`. No hay escritura de caché: ese campo queda a 0 y los tokens y `by_model` se marcan `estimated`. Las horas que salen de las marcas de tiempo siguen `measured`.
+It uses `turn_context.payload.model` and `event_msg` with `payload.type === "token_count"` and `info.last_token_usage`. The cumulative `total_token_usage` is ignored. `input_tokens` includes the cached part, so uncached input is `input_tokens - cached_input_tokens`, cache read is `cached_input_tokens`, and output adds `output_tokens` and `reasoning_output_tokens`. There is no cache write: that field stays 0 and tokens and `by_model` are marked `estimated`. Hours taken from timestamps stay `measured`.
 
-Un bloqueo cuenta cuando `rate_limits.rate_limit_reached_type` es un string no vacío. El string no se guarda. La espera sale de `primary.resets_at` o, si no está, `secondary.resets_at` (unix, segundos).
+A block counts when `rate_limits.rate_limit_reached_type` is a non-empty string. The string is not stored. The wait comes from `primary.resets_at` or, if missing, `secondary.resets_at` (unix, seconds).
 
-## Salida
+## Output
 
-Sin `--json`, un resumen en español y la URL. Pregunta antes de abrir el navegador. `--yes` abre sin preguntar. `--no-open` no abre. `--json` escribe solo el perfil en stdout; el navegador se abre solo si además pasas `--yes` y no `--no-open`.
+Without `--json`, an English summary and the URL. It asks before opening the browser. `--yes` opens without asking. `--no-open` does not open. `--json` writes only the profile to stdout; the browser opens only when you also pass `--yes` and not `--no-open`.
 
-La URL es `{base}/es/veredicto` más `profileToHash()`. Base por defecto: `https://pickagent.dev`.
+The URL is `{base}/en/veredicto` plus `profileToHash()`. Default base: `https://pickagent.dev`.
 
-El perfil pasa por `parseProfile` antes de usarse. Si no cumple el esquema, se imprimen las incidencias y el proceso sale con código 1. Sin uso medible (no hay horas con inicio y fin distintos) también sale con código 1: un perfil vacío no cabe en el esquema, porque `agent_hours`, `activity` y `by_model` son obligatorios.
+The profile goes through `parseProfile` before use. If it does not match the schema, the issues are printed and the process exits with code 1. With no measurable usage (no hours with a distinct start and end) it also exits with code 1: an empty profile does not fit the schema, because `agent_hours`, `activity`, and `by_model` are required.
 
-## Cómo auditarlo
+## How to audit it
 
-El código está en `src/`. El contrato del perfil (`pickagent.profile/v1`, su parse, su encode y el paso de los informes de uso a ese perfil) está en `src/profile/`. esbuild lo mete en `dist/cli.js` junto con Zod. No hay dependencias de runtime: el paquete publicado es ese archivo, este README y la licencia.
+The code is in `src/`. The profile contract (`pickagent.profile/v1`, its parse, its encode, and the step from usage reports to that profile) is in `src/profile/`. esbuild bundles it into `dist/cli.js` together with Zod. There are no runtime dependencies: the published package is that file, this README, and the license.
 
-Busca `fetch(`, `http.request`, `net.connect` y claves: no deberían aparecer, salvo la lista blanca de variables que sí se pasan a ccusage. La única ejecución externa es `npx ccusage@latest` y el `open` / `xdg-open` del sistema. En Windows el hijo no arranca `npx.cmd` a pelo (Node 20.12 o superior lo rechaza) y la URL del navegador va entre comillas. Windows: sin probar.
+Search for `fetch(`, `http.request`, `net.connect`, and keys: they should not appear, except the allowlist of variables passed to ccusage. The only external execution is `npx ccusage@latest` and the system `open` / `xdg-open`. On Windows the child does not start `npx.cmd` directly (Node 20.12 or newer rejects that) and the browser URL is quoted. Windows: untested.
 
-En un clon limpio: `npm ci && npm run build && node dist/cli.js scan --help && npm test`.
+On a clean clone: `npm ci && npm run build && node dist/cli.js scan --help && npm test`.
 
-## Por qué el código es público
+## Why the code is public
 
-El perfil no se sube. Viaja en el fragmento `#p=` de la URL, y el navegador no envía el fragmento al servidor. El repositorio es público para que cualquiera pueda comprobarlo: el escáner no hace `fetch` del perfil, no abre más red que la de `npx` al resolver `ccusage` y la de abrir el navegador, y el esquema de `src/profile/` no tiene sitio para el texto de las conversaciones. La página del veredicto lee ese fragmento en el navegador. El cálculo del veredicto no está en este repositorio.
+The profile is not uploaded. It travels in the `#p=` URL fragment, and the browser does not send the fragment to the server. The repository is public so anyone can check: the scanner does not `fetch` the profile, it opens no network beyond `npx` resolving `ccusage` and opening the browser, and the `src/profile/` schema has no place for conversation text. The verdict page reads that fragment in the browser. The verdict calculation is not in this repository.
 
-## Cómo se publica
+## How it is published
 
-No hace falta un token de npm. Al empujar un tag `vX.Y.Z` cuyo `X.Y.Z` coincida con `version` en `package.json`, GitHub Actions (`.github/workflows/release.yml`) instala dependencias, construye, ejecuta los tests y publica `@pickagent/cli` con `npm publish --provenance --access public`. La procedencia usa el OIDC de GitHub (`id-token: write`), así que el paquete en npm queda ligado a este repositorio y a ese commit.
+No npm token is required. Pushing a tag `vX.Y.Z` whose `X.Y.Z` matches `version` in `package.json` makes GitHub Actions (`.github/workflows/release.yml`) install dependencies, build, run the tests, and publish `@pickagent/cli` with `npm publish --provenance --access public`. Provenance uses GitHub OIDC (`id-token: write`), so the npm package is tied to this repository and that commit.
 
-Antes del primer tag hay que dar de alta el repositorio como trusted publisher del paquete en npmjs.com (workflow `release.yml`). El tag lo pone una persona; este repositorio no se publica solo.
+Before the first tag, the repository must be registered as a trusted publisher of the package on npmjs.com (workflow `release.yml`). A person creates the tag; this repository does not publish itself.

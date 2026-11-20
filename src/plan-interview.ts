@@ -110,7 +110,7 @@ function plansMissingPrice(profile: Profile, config: ScannerConfig): string[] {
 async function askPlan(io: ScanIo, config: ScannerConfig): Promise<string | null> {
   const fallback = config.plans?.[0];
   const answer = await io.prompt(
-    bracketDefault("Plan que pagas (slug del catálogo)", fallback),
+    bracketDefault("Plan you pay for (catalog slug)", fallback),
   );
   return normalizePlanSlug(answer, fallback);
 }
@@ -122,19 +122,19 @@ async function askPrice(
 ): Promise<DeclaredPlanPrice | null> {
   const fallback = config.plan_prices?.[planId];
   const amountRaw = await io.prompt(
-    bracketDefault(`Importe de ${planId}`, fallback?.amount?.toString()),
+    bracketDefault(`Amount for ${planId}`, fallback?.amount?.toString()),
   );
   const amount = parseAmount(amountRaw, fallback?.amount);
   if (amount == null) return null;
 
   const currencyRaw = await io.prompt(
-    bracketDefault(`Moneda de ${planId} (EUR/USD)`, fallback?.currency),
+    bracketDefault(`Currency for ${planId} (EUR/USD)`, fallback?.currency),
   );
   const currency = parseCurrency(currencyRaw, fallback?.currency);
   if (!currency) return null;
 
   const billingRaw = await io.prompt(
-    bracketDefault(`Ciclo de ${planId} (monthly/yearly)`, fallback?.billing),
+    bracketDefault(`Billing cycle for ${planId} (monthly/yearly)`, fallback?.billing),
   );
   const billing = parseBilling(billingRaw, fallback?.billing);
   if (!billing) return null;

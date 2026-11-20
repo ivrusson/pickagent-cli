@@ -24,7 +24,7 @@ import {
  * startTime|blockStart, modelBreakdowns|breakdown…). Readers are tolerant and
  * ignore anything they do not know. Project names, paths and session ids are
  * never copied: only numbers, model families and local hours survive.
- * ccusage does not report limit hits, so `blocks` (bloqueos) stays empty.
+ * ccusage does not report limit hits, so `blocks` stays empty.
  */
 
 export type CcusageReports = {
