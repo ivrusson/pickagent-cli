@@ -68,6 +68,7 @@ test("non-interactive scan applies saved prices without prompts", async () => {
       yes: false,
       noOpen: true,
       baseUrl: "https://pickagent.dev",
+      lang: null,
       codex: false,
     },
     io,
@@ -93,6 +94,7 @@ test("interactive scan asks once and writes config", async () => {
       yes: false,
       noOpen: true,
       baseUrl: "https://pickagent.dev",
+      lang: null,
       codex: false,
     },
     io,
@@ -104,4 +106,31 @@ test("interactive scan asks once and writes config", async () => {
     m.loadScannerConfig(m.scannerConfigPath(home)),
   );
   assert.equal(saved.plan_prices?.["claude-pro"]?.currency, "EUR");
+});
+
+test("an unmapped local tier asks for a plan instead of leaving it out", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-plan-unmapped-"));
+  const io = mockIo(
+    home,
+    ["cursor-ultra-legacy", "18", "EUR", "monthly", "200", "USD", "yearly"],
+    true,
+  );
+  const result = await withDeclaredPlans(
+    baseProfile(["chatgpt-plus"]),
+    {
+      period: "2026-10",
+      plans: [],
+      json: false,
+      yes: false,
+      noOpen: true,
+      baseUrl: "https://pickagent.dev",
+      lang: null,
+      codex: false,
+    },
+    io,
+    { unmapped: true },
+  );
+  assert.ok(io.prompts[0]?.includes("Plan you pay for"));
+  assert.ok(result.profile.plans.includes("chatgpt-plus"));
+  assert.ok(result.profile.plans.includes("cursor-ultra-legacy"));
 });

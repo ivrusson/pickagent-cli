@@ -1,6 +1,6 @@
 {
   "name": "@pickagent/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reads local usage logs and opens the pickagent verdict without uploading the profile.",
   "license": "MIT",
   "type": "module",

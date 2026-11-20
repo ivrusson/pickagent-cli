@@ -1,4 +1,5 @@
 import {
+  METRIC_KEYS,
   estimated,
   measured,
   parseProfile,
@@ -19,6 +20,11 @@ export type AssembleInput = {
   utcOffsetMinutes: number;
   /** Codex cache writes are absent, so token metrics stay estimated. */
   estimateTokens?: boolean;
+  /**
+   * Session clocks are inferred (file mtimes, not a usage log).
+   * Hours, sessions and the source provenance stay estimated.
+   */
+  estimateTime?: boolean;
   extraWarnings?: string[];
   /**
    * The local parser looked for quota hits. Drop the engine's
@@ -75,6 +81,27 @@ function withEstimatedTokens(profile: Profile, source: AssembleInput["source"]):
   return next;
 }
 
+/** An inferred clock cannot be a measured source. Every metric follows. */
+function withEstimatedTime(profile: Profile, source: AssembleInput["source"]): Profile {
+  const next: Profile = {
+    ...profile,
+    provenance: { ...profile.provenance, [source]: "estimated" },
+  };
+  for (const key of METRIC_KEYS) {
+    const metric = next[key];
+    if (!metric || metric.source !== source) continue;
+    next[key] = { ...metric, provenance: "estimated" } as Profile[typeof key];
+  }
+  const slice = next.by_source?.[source];
+  if (slice) {
+    next.by_source = {
+      ...next.by_source,
+      [source]: { ...slice, provenance: "estimated" },
+    };
+  }
+  return next;
+}
+
 export function assembleProfile(input: AssembleInput): Assembled {
   const result = profileFromCcusage(input.reports, {
     period: input.period,
@@ -92,6 +119,7 @@ export function assembleProfile(input: AssembleInput): Assembled {
     if (index >= 0) warnings.splice(index, 1);
   }
   if (draft && input.estimateTokens) draft = withEstimatedTokens(draft, input.source);
+  if (draft && input.estimateTime) draft = withEstimatedTime(draft, input.source);
   const parsed = parseProfile(draft ?? result.draft);
   if (!parsed.ok) return { profile: null, issues: parsed.issues, warnings };
   return { profile: parsed.profile, issues: [], warnings };

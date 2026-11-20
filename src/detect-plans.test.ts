@@ -13,10 +13,12 @@ import {
 } from "./detect-plans";
 
 test("mapClaudeTier prefers max/pro consumer tiers", () => {
+  assert.equal(mapClaudeTier("default_claude_ai"), "claude-pro");
   assert.equal(mapClaudeTier("default_claude_max_5x"), "claude-max-5x");
   assert.equal(mapClaudeTier("default_claude_max_20x"), "claude-ultra");
   assert.equal(mapClaudeTier("claude_pro"), "claude-pro");
   assert.equal(mapClaudeTier("pro"), "claude-pro");
+  assert.equal(mapClaudeTier("max"), null);
   assert.equal(mapClaudeTier("default_raven_enterprise"), null);
   assert.equal(mapClaudeTier("enterprise_usage_based"), null);
 });
@@ -30,11 +32,11 @@ test("mapCodexPlanType covers ChatGPT plan_type values", () => {
   assert.equal(mapCodexPlanType("free"), null);
 });
 
-test("mapCursorMembership maps legacy Stripe + X-subscription names", () => {
+test("mapCursorMembership keeps legacy Stripe prices off the new catalog", () => {
   assert.equal(mapCursorMembership("plus"), "cursor-plus");
-  assert.equal(mapCursorMembership("pro"), "cursor-premium");
-  assert.equal(mapCursorMembership("pro_plus"), "cursor-super");
-  assert.equal(mapCursorMembership("ultra"), "cursor-ultra");
+  assert.equal(mapCursorMembership("pro"), "cursor-pro-legacy");
+  assert.equal(mapCursorMembership("pro_plus"), "cursor-pro-plus-legacy");
+  assert.equal(mapCursorMembership("ultra"), null);
   assert.equal(mapCursorMembership("premium"), "cursor-premium");
   assert.equal(mapCursorMembership("super"), "cursor-super");
   assert.equal(mapCursorMembership("free"), null);
@@ -85,11 +87,53 @@ test("detectPlans reads Claude account file and Codex JWT", async () => {
   assert.deepEqual(detected.plans, [
     "claude-max-5x",
     "chatgpt-plus",
-    "cursor-super",
+    "cursor-pro-plus-legacy",
   ]);
   assert.equal(detected.detections[0]?.source, "claude-code");
   assert.equal(detected.detections[1]?.source, "codex");
   assert.equal(detected.detections[2]?.source, "cursor");
+});
+
+test("several Claude profiles keep every mapped plan", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-claude-plans-"));
+  const extra = join(home, ".claude-subs", "profiles", "other");
+  await mkdir(join(extra, "projects"), { recursive: true });
+  await writeFile(
+    join(home, ".claude-subs", "registry.json"),
+    JSON.stringify({
+      profiles: {
+        other: {
+          config_dir: extra,
+          env: { ANTHROPIC_API_KEY: "sk-do-not-keep" },
+          sensitive_env: ["TOKEN"],
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(home, ".claude.json"),
+    JSON.stringify({ organizationRateLimitTier: "default_claude_ai" }),
+  );
+  await writeFile(
+    join(extra, ".credentials.json"),
+    JSON.stringify({
+      claudeAiOauth: { rateLimitTier: "default_claude_max_5x", accessToken: "sk-do-not-keep" },
+    }),
+  );
+  const detected = await detectPlans({ home, env: {} });
+  assert.deepEqual([...detected.plans].sort(), ["claude-max-5x", "claude-pro"]);
+  assert.equal(JSON.stringify(detected).includes("sk-do-not-keep"), false);
+  assert.equal(detected.warnings.length, 0);
+});
+
+test("an ambiguous Cursor tier is left for the interview", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-cursor-ask-"));
+  const detected = await detectPlans({
+    home,
+    env: { CURSOR_MEMBERSHIP_TYPE: "ultra" },
+  });
+  assert.deepEqual(detected.plans, []);
+  assert.equal(detected.warnings[0], "plan_unmapped:cursor:ultra");
 });
 
 test("applyDetectedPlans fills plans and by_source.plan; CLI wins", () => {

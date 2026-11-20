@@ -1,6 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
+import { claudeConfigDirs } from "./claude-jsonl";
 import type { Source } from "./profile";
+import { CURSOR_LEGACY_PLAN_IDS } from "./profile/ids";
 import { CURSOR_MEMBERSHIP_KEY, cursorStateDbPath } from "./cursor-paths";
 import { readSqliteItemValue } from "./cursor-sqlite";
 
@@ -67,10 +69,19 @@ export function mapClaudeTier(raw: string): string | null {
   }
   if (/max[_-]?20x|ultra/.test(s)) return "claude-ultra";
   if (/max[_-]?5x/.test(s)) return "claude-max-5x";
-  if (/(^|_)pro($|_)/.test(s) || s === "pro" || s.endsWith("_pro")) {
+  // `default_claude_ai` is the Claude.ai Pro tier (not Max).
+  if (
+    s === "default_claude_ai" ||
+    s === "claude_ai" ||
+    s === "claude_pro" ||
+    /(^|_)pro($|_)/.test(s) ||
+    s === "pro" ||
+    s.endsWith("_pro")
+  ) {
     return "claude-pro";
   }
-  if (s === "max" || s.endsWith("_max")) return "claude-max-5x";
+  // Bare `max` does not say 5× or 20×. Leave it for the plan interview.
+  if (s === "max" || s === "claude_max" || s.endsWith("_max")) return null;
   return null;
 }
 
@@ -99,8 +110,10 @@ export function mapCodexPlanType(raw: string): string | null {
 }
 
 /**
- * Map Cursor `stripeMembershipType` / X-subscription names to catalog ids.
- * Legacy Pro/Pro+/Ultra → Premium/Super/Ultra (Cursor comparable-plan table).
+ * Map Cursor `stripeMembershipType` to catalog ids.
+ * Old Stripe product ids (`pro`, `pro_plus`) are the pre-rename prices
+ * (~$20 / ~$60), not Premium / Super. `ultra` is shared by the old and
+ * the current Ultra, so it is left unmapped and the interview asks.
  */
 export function mapCursorMembership(raw: string): string | null {
   const s = raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
@@ -109,23 +122,23 @@ export function mapCursorMembership(raw: string): string | null {
     case "plus":
     case "cursor_plus":
       return "cursor-plus";
-    case "pro":
     case "premium":
     case "cursor_premium":
       return "cursor-premium";
-    case "pro_plus":
-    case "proplus":
     case "super":
     case "cursor_super":
       return "cursor-super";
-    case "ultra":
-    case "cursor_ultra":
-      return "cursor-ultra";
+    case "pro":
+      return CURSOR_LEGACY_PLAN_IDS[0];
+    case "pro_plus":
+    case "proplus":
+      return CURSOR_LEGACY_PLAN_IDS[1];
     case "free":
     case "hobby":
     case "free_trial":
     case "trial":
-      return null;
+    case "ultra":
+    case "cursor_ultra":
     case "enterprise":
     case "team":
     case "teams":
@@ -174,67 +187,95 @@ async function readText(path: string): Promise<string | null> {
   }
 }
 
-export async function detectClaudePlan(
-  home: string,
-  env: NodeJS.ProcessEnv,
-): Promise<DetectedPlan | { warning: string } | null> {
-  const configDir = env.CLAUDE_CONFIG_DIR?.split(",")[0]?.trim();
-  const roots = [
-    configDir && configDir.length ? configDir : null,
-    join(home, ".claude"),
-  ].filter((p): p is string => Boolean(p));
+const CLAUDE_TIER_KEYS = [
+  "rateLimitTier",
+  "organizationRateLimitTier",
+  "userRateLimitTier",
+  "subscriptionType",
+  "organizationType",
+  "seatTier",
+];
 
-  const accountPath = join(home, ".claude.json");
-  const accountText = await readText(accountPath);
-  const candidates: { key: string; raw: string }[] = [];
-  if (accountText) {
-    for (const key of [
-      "organizationRateLimitTier",
-      "userRateLimitTier",
-      "seatTier",
-      "subscriptionType",
-    ]) {
-      const raw = jsonStringValue(accountText, key);
-      if (raw) candidates.push({ key, raw });
-    }
+function tierCandidates(text: string | null): { key: string; raw: string }[] {
+  if (!text) return [];
+  const found: { key: string; raw: string }[] = [];
+  for (const key of CLAUDE_TIER_KEYS) {
+    const raw = jsonStringValue(text, key);
+    if (raw) found.push({ key, raw });
   }
+  return found;
+}
 
-  for (const root of roots) {
-    const credText = await readText(join(root, ".credentials.json"));
-    if (!credText) continue;
-    for (const key of ["rateLimitTier", "subscriptionType"]) {
-      const raw = jsonStringValue(credText, key);
-      if (raw) candidates.push({ key, raw });
-    }
-  }
-
-  // Prefer explicit max/pro tier strings over seatTier / subscriptionType.
-  const ranked = [...candidates].sort((a, b) => {
+function rankTiers(candidates: { key: string; raw: string }[]): { key: string; raw: string }[] {
+  return [...candidates].sort((a, b) => {
     const score = (c: { key: string; raw: string }) => {
-      if (/max|ultra|pro/.test(c.raw.toLowerCase())) return 0;
+      if (/max|ultra|pro|claude_ai/.test(c.raw.toLowerCase())) return 0;
       if (c.key.toLowerCase().includes("ratelimit")) return 1;
       return 2;
     };
     return score(a) - score(b);
   });
+}
 
-  for (const { raw } of ranked) {
-    const plan = mapClaudeTier(raw);
-    if (plan) {
-      return {
+/**
+ * One catalog plan per Claude config directory. Several profiles can
+ * carry several plans; each distinct slug is returned.
+ */
+export async function detectClaudePlans(
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ detections: DetectedPlan[]; warnings: string[] }> {
+  const roots = await claudeConfigDirs(env, home);
+  const detections: DetectedPlan[] = [];
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  const homeAccount = await readText(join(home, ".claude.json"));
+  const defaultDir = join(home, ".claude");
+  let defaultReal = defaultDir;
+  try {
+    defaultReal = await realpath(defaultDir);
+  } catch {
+    defaultReal = defaultDir;
+  }
+
+  const buckets: { key: string; raw: string }[][] = [];
+  let attachedHome = false;
+  for (const root of roots) {
+    const own = [
+      ...tierCandidates(await readText(join(root, ".credentials.json"))),
+      ...tierCandidates(await readText(join(root, ".claude.json"))),
+    ];
+    // ~/.claude.json is the default account file, not a per-profile copy.
+    if (root === defaultReal || root === defaultDir) {
+      own.push(...tierCandidates(homeAccount));
+      attachedHome = true;
+    }
+    if (own.length) buckets.push(own);
+  }
+  if (!attachedHome && homeAccount) buckets.push(tierCandidates(homeAccount));
+
+  for (const candidates of buckets) {
+    const ranked = rankTiers(candidates);
+    let mapped = false;
+    for (const { raw } of ranked) {
+      const plan = mapClaudeTier(raw);
+      if (!plan) continue;
+      mapped = true;
+      if (seen.has(plan)) break;
+      seen.add(plan);
+      detections.push({
         source: "claude-code",
         plan,
         raw,
         confidence: "measured",
-      };
+      });
+      break;
+    }
+    if (!mapped && ranked.length) {
+      warnings.push(`plan_unmapped:claude-code:${ranked[0]!.raw}`);
     }
   }
-  if (ranked.length) {
-    return {
-      warning: `plan_unmapped:claude-code:${ranked[0]!.raw}`,
-    };
-  }
-  return null;
+  return { detections, warnings };
 }
 
 export async function detectCodexPlan(
@@ -292,6 +333,19 @@ export async function detectCursorPlan(
           CURSOR_MEMBERSHIP_KEY,
         );
   if (!raw) return null;
+  const normalized = raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  // Not a consumer catalog plan. Do not ask about it.
+  if (
+    normalized === "free" ||
+    normalized === "hobby" ||
+    normalized === "free_trial" ||
+    normalized === "trial" ||
+    normalized === "enterprise" ||
+    normalized === "team" ||
+    normalized === "teams"
+  ) {
+    return null;
+  }
   const plan = mapCursorMembership(raw);
   if (plan) {
     return {
@@ -301,6 +355,7 @@ export async function detectCursorPlan(
       confidence: "measured",
     };
   }
+  // `ultra` and any other paid string we cannot place.
   return { warning: `plan_unmapped:cursor:${raw}` };
 }
 
@@ -314,9 +369,11 @@ export async function detectPlans(input: {
   const detections: DetectedPlan[] = [];
   const allow = input.sources ? new Set(input.sources) : null;
 
-  const claude = await detectClaudePlan(input.home, input.env);
-  if (claude && "warning" in claude) warnings.push(claude.warning);
-  else if (claude && (!allow || allow.has("claude-code"))) detections.push(claude);
+  const claude = await detectClaudePlans(input.home, input.env);
+  warnings.push(...claude.warnings);
+  for (const found of claude.detections) {
+    if (!allow || allow.has("claude-code")) detections.push(found);
+  }
 
   const codex = await detectCodexPlan(input.home, input.env);
   if (codex && "warning" in codex) warnings.push(codex.warning);
@@ -364,19 +421,27 @@ export function applyDetectedPlans<
   >;
   const provenance = { ...profile.provenance };
 
+  const plansBySource = new Map<Source, string[]>();
   for (const d of detected.detections) {
-    const prev = by_source[d.source];
+    const list = plansBySource.get(d.source) ?? [];
+    if (!list.includes(d.plan)) list.push(d.plan);
+    plansBySource.set(d.source, list);
+    if (provenance[d.source] == null) provenance[d.source] = d.confidence;
+  }
+  for (const [source, planList] of plansBySource) {
+    const prev = by_source[source];
+    // One harness field cannot name two plans. All of them stay in `plans`.
+    const plan = planList.length === 1 ? planList[0] : undefined;
     if (prev) {
-      by_source[d.source] = { ...prev, plan: d.plan };
-    } else {
-      // Auth found a plan but this period had no usage from that harness.
-      by_source[d.source] = {
+      by_source[source] = plan ? { ...prev, plan } : { ...prev };
+    } else if (plan) {
+      const sample = detected.detections.find((d) => d.source === source);
+      by_source[source] = {
         agent_hours: 0,
-        provenance: d.confidence,
-        plan: d.plan,
+        provenance: sample?.confidence ?? "measured",
+        plan,
       };
     }
-    if (provenance[d.source] == null) provenance[d.source] = d.confidence;
   }
 
   const plans = opts.cliPlans.length

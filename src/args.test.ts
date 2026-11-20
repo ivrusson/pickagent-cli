@@ -6,6 +6,7 @@ import {
   normalizeBaseUrl,
   parseArgs,
   periodFromDays,
+  verdictLangFromEnv,
   verdictUrl,
 } from "./args";
 
@@ -40,9 +41,30 @@ test("plan slugs and base url are checked", () => {
   );
   assert.equal(parsed.ok && !parsed.help && parsed.args.baseUrl, "https://example.com/app");
   assert.equal(
-    verdictUrl("https://pickagent.dev", "#p=1.abc"),
-    "https://pickagent.dev/en/veredicto#p=1.abc",
+    verdictUrl("https://pickagent.dev", "#p=1.abc", "en"),
+    "https://pickagent.dev/en/verdict#p=1.abc",
   );
+  assert.equal(
+    verdictUrl("https://pickagent.dev", "#p=1.abc", "es"),
+    "https://pickagent.dev/es/veredicto#p=1.abc",
+  );
+});
+
+test("--lang overrides the locale and rejects other tags", () => {
+  const spanish = parseArgs(["scan", "--lang", "es"], now, 0);
+  assert.equal(spanish.ok && !spanish.help && spanish.args.lang, "es");
+  const english = parseArgs(["scan", "--lang", "en"], now, 0);
+  assert.equal(english.ok && !english.help && english.args.lang, "en");
+  const omitted = parseArgs(["scan"], now, 0);
+  assert.equal(omitted.ok && !omitted.help && omitted.args.lang, null);
+  assert.equal(parseArgs(["scan", "--lang", "fr"], now, 0).ok, false);
+});
+
+test("locale es opens the Spanish verdict", () => {
+  assert.equal(verdictLangFromEnv({ LC_ALL: "es_ES.UTF-8", LANG: "en_US" }), "es");
+  assert.equal(verdictLangFromEnv({ LC_MESSAGES: "es", LANG: "C" }), "es");
+  assert.equal(verdictLangFromEnv({ LANG: "en_US.UTF-8" }), "en");
+  assert.equal(verdictLangFromEnv({}), "en");
 });
 
 test("month bounds are local and exclusive at the end", () => {

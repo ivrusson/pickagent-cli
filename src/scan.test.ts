@@ -289,7 +289,7 @@ test("--yes opens the verdict URL and a refusal does not", async () => {
   const code = await runScan(["scan", "--period", "2026-10", "--yes"], opened);
   assert.equal(code, 0);
   assert.equal(opened.opened.length, 1);
-  assert.match(opened.opened[0] ?? "", /^https:\/\/pickagent\.dev\/en\/veredicto#p=/);
+  assert.match(opened.opened[0] ?? "", /^https:\/\/pickagent\.dev\/en\/verdict#p=/);
   assert.match(opened.out, /measured/);
   assert.match(opened.out, /2026-10/);
 

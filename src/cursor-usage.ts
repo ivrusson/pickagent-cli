@@ -1,5 +1,5 @@
 import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { hashKey } from "./hash";
 import {
   cursorProjectsDir,
@@ -80,7 +80,7 @@ async function fromTranscripts(
   } catch {
     return 0;
   }
-  let added = 0;
+  const groups = new Map<string, { start: number; end: number }>();
   for (const project of projectEntries) {
     if (!project.isDirectory()) continue;
     const transcriptsRoot = join(
@@ -111,21 +111,37 @@ async function fromTranscripts(
       if (!overlaps(start, end, bounds)) continue;
       const clipped = clip(start, end, bounds);
       if (!(clipped.end > clipped.start)) continue;
-      addSessionSpan(
-        agg,
-        {
-          session: hashKey(file),
-          start: clipped.start,
-          end: clipped.end,
-          model: "composer",
-          weight: 1,
-        },
-        offsetMinutes,
-      );
-      added += 1;
+      const key = conversationKey(transcriptsRoot, file);
+      const prev = groups.get(key);
+      if (!prev) groups.set(key, { start: clipped.start, end: clipped.end });
+      else {
+        prev.start = Math.min(prev.start, clipped.start);
+        prev.end = Math.max(prev.end, clipped.end);
+      }
     }
   }
-  return added;
+  for (const [key, span] of groups) {
+    addSessionSpan(
+      agg,
+      {
+        session: hashKey(key),
+        start: span.start,
+        end: span.end,
+        model: "composer",
+        weight: 1,
+      },
+      offsetMinutes,
+    );
+  }
+  return groups.size;
+}
+
+/** Directory under `agent-transcripts` — one conversation, many jsonl files. */
+function conversationKey(transcriptsRoot: string, file: string): string {
+  const rel = relative(transcriptsRoot, file);
+  const parts = rel.split(sep).filter((part) => part && part !== ".");
+  const folder = parts.length > 1 ? parts[0]! : parts[0]?.replace(/\.jsonl$/, "") ?? rel;
+  return `${transcriptsRoot}${sep}${folder}`;
 }
 
 async function fromTrackingDb(

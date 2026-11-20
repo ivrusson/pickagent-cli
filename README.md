@@ -25,6 +25,8 @@ npx @pickagent/cli scan --help
 --days N             Last N days, including today (1–366).
 --plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
 --base-url URL       Verdict origin. Default https://pickagent.dev.
+--lang es|en         Verdict language. Default: es when LC_ALL, LC_MESSAGES,
+                     or LANG starts with es; otherwise en.
 --json               Write only the JSON profile to stdout.
 --yes                Open the browser without asking.
 --no-open            Do not open the browser.
@@ -55,10 +57,11 @@ Every agent ccusage detects, by default.
    - `session` with the same flags
    - `blocks` with `--json --no-cost --offline` and the same range (Claude 5-hour windows)
 2. The `--by-agent` JSON is split by harness. Totals go into the profile metrics and the breakdown into `by_source` (hours, sessions, provenance per source).
-3. If ccusage fails to start or fails validation, the local parser reads `~/.claude/projects/**/*.jsonl` (and `~/.config/claude`). `CLAUDE_CONFIG_DIR` replaces those paths.
+3. If ccusage fails to start or fails validation, the local parser reads every Claude config directory: comma-separated `CLAUDE_CONFIG_DIR`, each `config_dir` in `~/.claude-subs/registry.json` (that field only), and the defaults `~/.claude` and `~/.config/claude`. Usage is summed as one `claude-code` source.
 4. If local Codex rollouts exist and ccusage did not contribute Codex, they are merged into the profile.
 5. If Cursor agent-transcripts or `ai-tracking` exist and ccusage did not contribute Cursor, they are merged (estimated hours; chat text is not read).
-6. Plans (no network): it reads the Claude tier in `~/.claude.json` / credentials, the `chatgpt_plan_type` JWT claim in `~/.codex/auth.json`, and Cursor `stripeMembershipType` in `state.vscdb`, maps them to catalog slugs (`claude-pro`, `chatgpt-plus`, `cursor-super`, …), and writes them to `plans` and `by_source.*.plan`. `--plan` replaces detection. Tokens and email are not uploaded.
+6. Plans (no network): it reads the Claude tier in every config directory (`default_claude_ai` is Claude Pro; Max 5× / 20× map to `claude-max-5x` / `claude-ultra`), the `chatgpt_plan_type` JWT claim in `~/.codex/auth.json`, and Cursor `stripeMembershipType` in `state.vscdb`. Old Stripe ids `pro` and `pro_plus` map to `cursor-pro-legacy` and `cursor-pro-plus-legacy`, not Premium or Super. `ultra` is ambiguous, so an interactive terminal asks. Several Claude profiles can contribute several plans. `--plan` replaces detection. Tokens and email are not uploaded.
+7. OpenCode, Kimi (`~/.kimi` and `~/.kimi-code`), and Codex hours that ccusage leaves at 0 are estimated from session timestamps. Gemini CLI (`~/.gemini/tmp`) and Antigravity (`~/.gemini/antigravity`) are included the same way: tokens by family when the file has a usage object, otherwise hours and days only.
 
 ccusage is not part of pickagent. It is third-party code, and each run resolves it with `npx` as `ccusage@latest`, with no pinned version.
 
@@ -130,7 +133,7 @@ A block counts when `rate_limits.rate_limit_reached_type` is a non-empty string.
 
 Without `--json`, an English summary and the URL. It asks before opening the browser. `--yes` opens without asking. `--no-open` does not open. `--json` writes only the profile to stdout; the browser opens only when you also pass `--yes` and not `--no-open`.
 
-The URL is `{base}/en/veredicto` plus `profileToHash()`. Default base: `https://pickagent.dev`.
+The URL is `{base}/es/veredicto` when `LC_ALL`, `LC_MESSAGES`, or `LANG` starts with `es`, and `{base}/en/verdict` otherwise, plus `profileToHash()`. `--lang es` or `--lang en` overrides that. Default base: `https://pickagent.dev`. `/en/veredicto` redirects on the site.
 
 The profile goes through `parseProfile` before use. If it does not match the schema, the issues are printed and the process exits with code 1. With no measurable usage (no hours with a distinct start and end) it also exits with code 1: an empty profile does not fit the schema, because `agent_hours`, `activity`, and `by_model` are required.
 

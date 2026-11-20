@@ -28,6 +28,8 @@ Options
   --plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
                        When passed, replaces automatic detection.
   --base-url URL       Verdict origin. Default ${DEFAULT_BASE_URL}.
+  --lang es|en         Verdict language. Default: es when LC_ALL, LC_MESSAGES,
+                       or LANG starts with es; otherwise en.
   --json               Write only the JSON profile to stdout.
   --yes                Open the browser without asking.
   --no-open            Do not open the browser.
@@ -45,6 +47,8 @@ export type ScanArgs = {
   yes: boolean;
   noOpen: boolean;
   baseUrl: string;
+  /** null: choose from LC_ALL / LC_MESSAGES / LANG at run time. */
+  lang: "es" | "en" | null;
   codex: boolean;
 };
 
@@ -153,6 +157,7 @@ export function parseArgs(
   let yes = false;
   let noOpen = false;
   let baseUrl = DEFAULT_BASE_URL;
+  let lang: "es" | "en" | null = null;
   let codex = false;
 
   for (let i = 0; i < rest.length; i++) {
@@ -168,6 +173,13 @@ export function parseArgs(
     else if (flag === "--yes") yes = true;
     else if (flag === "--no-open") noOpen = true;
     else if (flag === "--codex") codex = true;
+    else if (flag === "--lang") {
+      const value = take()?.toLowerCase();
+      if (value !== "es" && value !== "en") {
+        return { ok: false, error: "--lang expects es or en." };
+      }
+      lang = value;
+    }
     else if (flag === "--period") {
       const value = take();
       if (!value || !MONTH_RE.test(value)) {
@@ -206,10 +218,22 @@ export function parseArgs(
   return {
     ok: true,
     help: false,
-    args: { period: resolved, plans, json, yes, noOpen, baseUrl, codex },
+    args: { period: resolved, plans, json, yes, noOpen, baseUrl, lang, codex },
   };
 }
 
-export function verdictUrl(baseUrl: string, hash: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}/en/veredicto${hash}`;
+export type VerdictLang = "es" | "en";
+
+/** Spanish locales open /es/veredicto. Anything else opens /en/verdict. */
+export function verdictLangFromEnv(env: NodeJS.ProcessEnv): VerdictLang {
+  const raw = env.LC_ALL || env.LC_MESSAGES || env.LANG || "";
+  return raw.trim().toLowerCase().startsWith("es") ? "es" : "en";
+}
+
+export function verdictPath(lang: VerdictLang): string {
+  return lang === "es" ? "/es/veredicto" : "/en/verdict";
+}
+
+export function verdictUrl(baseUrl: string, hash: string, lang: VerdictLang = "en"): string {
+  return `${baseUrl.replace(/\/+$/, "")}${verdictPath(lang)}${hash}`;
 }

@@ -26,8 +26,10 @@ Aggregates only: tokens, hours, models, 5-hour windows. Hours stored at hour gra
 
 ```
 npx @pickagent/cli scan [--period YYYY-MM | --days N] [--plan SLUG]...
-  [--json] [--yes] [--no-open] [--codex] [--base-url URL]
+  [--lang es|en] [--json] [--yes] [--no-open] [--codex] [--base-url URL]
 ```
+
+`--lang` forces `/es/veredicto` or `/en/verdict`. Without it, a locale starting with `es` (`LC_ALL`, then `LC_MESSAGES`, then `LANG`) opens the Spanish page.
 
 - `--json` + `--no-open`: profile on stdout for MCP `simulate_profile`.
 - `--yes`: skip the browser confirmation prompt (still opens unless `--no-open`).

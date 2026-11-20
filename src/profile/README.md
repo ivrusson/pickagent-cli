@@ -36,3 +36,17 @@ in `fixtures/profiles.ts` are not here.
 6. Write the new source commit in this file.
 7. `npm test` and `npm run build`. Check `dist/cli.js`: it must still be only
    the scanner and this contract.
+
+## Pending resync with the web engine
+
+These CLI edits are not in the source commit above. Copy them back when the
+web engine takes the same behavior:
+
+- `merge-sources.ts`: `dominantSource` picks the **measured** source with the
+  most `agent_hours`, using the provenance map (a source stays measured only
+  when every contributor says measured). An estimated source is primary only
+  when no measured source has hours. Estimated session counts stay on
+  `by_source` and are not added to the primary `sessions` metric. `activity`
+  provenance follows the dominant source when that source is estimated.
+- `ids.ts`: `CURSOR_LEGACY_PLAN_IDS` —
+  `cursor-pro-legacy`, `cursor-pro-plus-legacy`, `cursor-ultra-legacy`.

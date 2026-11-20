@@ -16,6 +16,7 @@ import {
   localOffsetMinutes,
   parseArgs,
   periodRange,
+  verdictLangFromEnv,
   verdictUrl,
   type ScanArgs,
 } from "./args";
@@ -30,6 +31,15 @@ import {
 import { withDeclaredPlans } from "./plan-interview";
 import { readCursorUsage } from "./cursor-usage";
 import { noteLines, renderPreview } from "./preview";
+import {
+  applyHourFills,
+  readAntigravityFill,
+  readCodexHourFill,
+  readGeminiFill,
+  readKimiFill,
+  readOpenCodeFill,
+  type HourFill,
+} from "./local-hours";
 import { localDay, toReports } from "./reports";
 
 const CCUSAGE_READER =
@@ -125,7 +135,7 @@ async function fromLocalClaude(
       { path: "period", message: "invalid period" },
     ]);
   }
-  const logs = await readClaudeLogs(claudeConfigDirs(io.env, io.home), bounds, offset);
+  const logs = await readClaudeLogs(await claudeConfigDirs(io.env, io.home), bounds, offset);
   const local = assembleProfile({
     period: args.period,
     plans: args.plans,
@@ -187,9 +197,8 @@ async function maybeMergeLocalCursor(
   offset: number,
   warnings: string[],
 ): Promise<{ profile: Profile; warnings: string[] }> {
-  if (profile.by_source?.cursor || profile.provenance.cursor) {
-    return { profile, warnings };
-  }
+  const cursorHours = profile.by_source?.cursor?.agent_hours ?? 0;
+  if (cursorHours > 0) return { profile, warnings };
   const bounds = boundsOf(args.period, offset);
   if (!bounds) return { profile, warnings };
   const logs = await readCursorUsage(io.env, io.home, bounds, offset);
@@ -204,6 +213,7 @@ async function maybeMergeLocalCursor(
     source: "cursor",
     utcOffsetMinutes: offset,
     estimateTokens: true,
+    estimateTime: true,
     limitHitsKnown: true,
     extraWarnings: [
       "cursor_experimental",
@@ -337,6 +347,32 @@ async function withDetectedPlans(
   };
 }
 
+async function fillZeroHours(
+  profile: Profile,
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+): Promise<Profile> {
+  const bounds = boundsOf(args.period, offset);
+  if (!bounds) return profile;
+  const missing = (source: Source) => {
+    const slice = profile.by_source?.[source];
+    return !slice || slice.agent_hours <= 0;
+  };
+  const fills: HourFill[] = [];
+  const take = async (source: Source, read: () => Promise<HourFill | null>) => {
+    if (!missing(source)) return;
+    const fill = await read();
+    if (fill) fills.push(fill);
+  };
+  await take("opencode", () => readOpenCodeFill(io.home, bounds, offset));
+  await take("kimi-cli", () => readKimiFill(io.home, bounds, offset));
+  await take("codex", () => readCodexHourFill(io.env, io.home, bounds, offset));
+  await take("gemini-cli", () => readGeminiFill(io.home, bounds, offset));
+  await take("antigravity", () => readAntigravityFill(io.home, bounds, offset));
+  return applyHourFills(profile, fills);
+}
+
 async function maybeOpen(args: ScanArgs, io: ScanIo, url: string) {
   if (args.noOpen) return;
   const openNow =
@@ -373,16 +409,20 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
     io.stderr(renderFailure(args.period, assembled.issues, assembled.warnings));
     return 1;
   }
+  const timed = await fillZeroHours(assembled.profile, args, io, offset);
   const enriched = await withDetectedPlans(
-    assembled.profile,
+    timed,
     args,
     io,
     assembled.warnings,
   );
-  const declared = await withDeclaredPlans(enriched.profile, args, io);
+  const declared = await withDeclaredPlans(enriched.profile, args, io, {
+    unmapped: enriched.warnings.some((warning) => warning.startsWith("plan_unmapped:")),
+  });
   const profile = declared.profile;
   const scanWarnings = [...enriched.warnings, ...declared.warnings];
-  const url = verdictUrl(args.baseUrl, profileToHash(profile));
+  const lang = args.lang ?? verdictLangFromEnv(io.env);
+  const url = verdictUrl(args.baseUrl, profileToHash(profile), lang);
   if (args.json) {
     io.stdout(`${JSON.stringify(profile, null, 2)}\n`);
     if (

@@ -190,19 +190,41 @@ function breakdownOf(profile: Profile): SourceBreakdown {
   };
 }
 
-function dominantSource(bySource: Partial<Record<Source, SourceBreakdown>>): Source {
-  let best: Source | null = null;
-  let hours = -1;
+/**
+ * Primary source: the measured harness with the most agent-hours.
+ * The provenance map wins over the slice: ccusage marks a source measured
+ * even when the hour figure itself is estimated. A source is measured only
+ * when every contributor says so. Estimated slices (Cursor file clocks,
+ * timestamp fills) never outrank a measured one that has hours.
+ * Pending resync with the web engine — see README.md.
+ */
+export function dominantSource(
+  bySource: Partial<Record<Source, SourceBreakdown>>,
+  provenance: Partial<Record<Source, "measured" | "estimated">> = {},
+): Source {
+  let bestMeasured: Source | null = null;
+  let measuredHours = -1;
+  let bestAny: Source | null = null;
+  let anyHours = -1;
   for (const [source, slice] of Object.entries(bySource) as [
     Source,
     SourceBreakdown,
   ][]) {
-    if (slice.agent_hours > hours) {
-      hours = slice.agent_hours;
-      best = source;
+    if (slice.agent_hours > anyHours) {
+      anyHours = slice.agent_hours;
+      bestAny = source;
+    }
+    const method = provenance[source] ?? slice.provenance;
+    if (
+      method === "measured" &&
+      slice.agent_hours > 0 &&
+      slice.agent_hours > measuredHours
+    ) {
+      measuredHours = slice.agent_hours;
+      bestMeasured = source;
     }
   }
-  return best ?? "claude-code";
+  return bestMeasured ?? bestAny ?? "claude-code";
 }
 
 function retarget<T>(
@@ -295,7 +317,7 @@ export function profileFromMultiAgent(
     provenance[source] = base.provenance[source] ?? base.agent_hours.provenance;
   }
 
-  const dominant = dominantSource(by_source);
+  const dominant = dominantSource(by_source, provenance);
   const next: Profile = {
     ...base,
     provenance,
@@ -388,8 +410,11 @@ export function mergeProfileParts(
       Source,
       "measured" | "estimated",
     ][]) {
-      if (provenance[source] === "measured") continue;
-      provenance[source] = method;
+      const prev = provenance[source];
+      if (prev == null) provenance[source] = method;
+      else if (prev === "estimated" || method === "estimated") {
+        provenance[source] = "estimated";
+      }
     }
     if (profile.by_source) {
       for (const [source, slice] of Object.entries(profile.by_source) as [
@@ -428,10 +453,14 @@ export function mergeProfileParts(
             sessions: (prev.sessions ?? 0) + (slice.sessions ?? 0) || undefined,
           }
         : slice;
+      const method = profile.agent_hours.provenance;
+      const prevMethod = provenance[source];
       provenance[source] =
-        provenance[source] === "measured"
-          ? "measured"
-          : profile.agent_hours.provenance;
+        prevMethod == null
+          ? method
+          : prevMethod === "measured" && method === "measured"
+            ? "measured"
+            : "estimated";
     }
 
     agentHours += profile.agent_hours.value;
@@ -453,7 +482,8 @@ export function mergeProfileParts(
         });
       }
     }
-    if (profile.sessions) {
+    // Estimated session counts (one file per Cursor turn) stay on by_source.
+    if (profile.sessions && profile.sessions.provenance === "measured") {
       sessionCount += profile.sessions.value.count;
       sessionMedianWeight += profile.sessions.value.count;
       sessionMedianAcc +=
@@ -480,8 +510,9 @@ export function mergeProfileParts(
     }
   }
 
-  const dominant = dominantSource(by_source);
+  const dominant = dominantSource(by_source, provenance);
   const hoursProv = hoursMeasured ? "measured" : "estimated";
+  const dominantProv = provenance[dominant] === "estimated" ? "estimated" : "measured";
   const hourMetric = {
     value: Math.round(agentHours * 10) / 10,
     provenance: hoursProv,
@@ -523,7 +554,7 @@ export function mergeProfileParts(
     provenance,
     by_source,
     agent_hours: hourMetric,
-    activity: { value: activity, provenance: "measured", source: dominant },
+    activity: { value: activity, provenance: dominantProv, source: dominant },
     by_model: {
       value: byModelValue,
       provenance: tokenRows.length

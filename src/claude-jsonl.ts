@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { hashKey } from "./hash";
@@ -25,15 +25,68 @@ type Dict = Record<string, unknown>;
 const isDict = (value: unknown): value is Dict =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export function claudeConfigDirs(env: NodeJS.ProcessEnv, home: string): string[] {
+/**
+ * Every Claude Code config directory for this machine.
+ * Comma-separated `CLAUDE_CONFIG_DIR`, each `config_dir` in
+ * `~/.claude-subs/registry.json` (that field only), and the defaults.
+ * Paths are deduped. Registry env and tokens are never read.
+ */
+export async function claudeConfigDirs(
+  env: NodeJS.ProcessEnv,
+  home: string,
+): Promise<string[]> {
+  const found: string[] = [];
   const raw = env.CLAUDE_CONFIG_DIR?.trim();
   if (raw) {
-    return raw
-      .split(",")
-      .map((entry) => expandHome(entry.trim(), home))
-      .filter((entry) => entry.length > 0);
+    for (const entry of raw.split(",")) {
+      const expanded = expandHome(entry.trim(), home);
+      if (expanded) found.push(expanded);
+    }
   }
-  return [join(home, ".config", "claude"), join(home, ".claude")];
+  found.push(...(await registryConfigDirs(home)));
+  found.push(join(home, ".config", "claude"), join(home, ".claude"));
+  return dedupePaths(found);
+}
+
+/** `config_dir` strings from the claude-subs registry. Nothing else. */
+export async function registryConfigDirs(home: string): Promise<string[]> {
+  let text: string;
+  try {
+    text = await readFile(join(home, ".claude-subs", "registry.json"), "utf8");
+  } catch {
+    return [];
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text) as unknown;
+  } catch {
+    return [];
+  }
+  if (!isDict(data) || !isDict(data.profiles)) return [];
+  const dirs: string[] = [];
+  for (const profile of Object.values(data.profiles)) {
+    if (!isDict(profile) || typeof profile.config_dir !== "string") continue;
+    const expanded = expandHome(profile.config_dir.trim(), home);
+    if (expanded) dirs.push(expanded);
+  }
+  return dirs;
+}
+
+async function dedupePaths(paths: string[]): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const path of paths) {
+    let key = path;
+    try {
+      key = await realpath(path);
+    } catch {
+      key = path;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
 }
 
 function expandHome(path: string, home: string): string {

@@ -147,6 +147,7 @@ async function runInterview(
   config: ScannerConfig,
   io: ScanIo,
   args: ScanArgs,
+  opts?: { askUnmapped?: boolean },
 ): Promise<{ profile: Profile; config: ScannerConfig; warnings: string[] }> {
   const warnings: string[] = [];
   let next = { ...profile };
@@ -154,6 +155,14 @@ async function runInterview(
     plans: [...(config.plans ?? [])],
     plan_prices: { ...(config.plan_prices ?? {}) },
   };
+
+  if (opts?.askUnmapped && next.plans.length && !args.plans.length) {
+    const extra = await askPlan(io, config);
+    if (extra && !next.plans.includes(extra)) {
+      next = { ...next, plans: [...next.plans, extra].slice(0, 10) };
+      saved.plans = [...next.plans];
+    }
+  }
 
   if (!args.plans.length && !next.plans.length) {
     const planId = await askPlan(io, config);
@@ -196,6 +205,7 @@ export async function withDeclaredPlans(
   profile: Profile,
   args: ScanArgs,
   io: ScanIo,
+  extra?: { unmapped?: boolean },
 ): Promise<DeclaredPlansResult> {
   const configPath = scannerConfigPath(io.home);
   const config = await loadScannerConfig(configPath);
@@ -212,10 +222,12 @@ export async function withDeclaredPlans(
   const noPlans =
     !args.plans.length && !prefilled.plans.length;
   const missingPrices = plansMissingPrice(prefilled, {});
+  const askUnmapped =
+    Boolean(extra?.unmapped) && !args.plans.length && prefilled.plans.length > 0;
 
   let next = profile;
-  if (noPlans || missingPrices.length > 0) {
-    const interviewed = await runInterview(next, config, io, args);
+  if (noPlans || missingPrices.length > 0 || askUnmapped) {
+    const interviewed = await runInterview(next, config, io, args, { askUnmapped });
     next = interviewed.profile;
     warnings.push(...interviewed.warnings);
     if (

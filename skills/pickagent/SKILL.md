@@ -39,9 +39,10 @@ Add flags from what they told you:
 | `--codex`          | User runs **Codex** (not Claude Code); experimental.                                   |
 | `--yes`            | Auto-open browser without a second prompt (only if they asked).                        |
 | `--no-open`        | Do not open a browser.                                                                 |
+| `--lang es` or `en` | Force the verdict page. Default follows `LC_ALL`, then `LC_MESSAGES`, then `LANG` (`es` → `/es/veredicto`, otherwise `/en/verdict`). |
 | `--json`           | Print `pickagent.profile/v1` on stdout (pair with `--no-open` for in-agent follow-up). |
 
-After a successful run, summarize the profile in plain language: agent hours, busy windows, model mix, and `current_plan_ids` / provenance (`measured` vs `estimated`). Offer the verdict URL the CLI printed (`https://pickagent.dev/en/veredicto#p=…`).
+After a successful run, summarize the profile in plain language: agent hours, busy windows, model mix, and `current_plan_ids` / provenance (`measured` vs `estimated`). Offer the verdict URL the CLI printed (`https://pickagent.dev/en/verdict#p=…`, or `/es/veredicto` when the locale is Spanish).
 
 ## Browser-free path
 

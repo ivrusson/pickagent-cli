@@ -121,6 +121,18 @@ export const PROVENANCE = ["measured", "estimated"] as const;
 export type Provenance = (typeof PROVENANCE)[number];
 export const ProvenanceSchema = z.enum(PROVENANCE);
 
+/**
+ * Cursor prices from before the Plus / Premium / Super rename.
+ * Local Stripe ids `pro` and `pro_plus` are these products, not
+ * `cursor-premium` / `cursor-super`. Append-only; the web catalog
+ * adds the same slugs.
+ */
+export const CURSOR_LEGACY_PLAN_IDS = [
+  "cursor-pro-legacy",
+  "cursor-pro-plus-legacy",
+  "cursor-ultra-legacy",
+] as const;
+
 /** Catalog plan ids: lowercase slugs such as `claude-max-5x`. */
 export const PlanIdSchema = z
   .string()
