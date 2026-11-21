@@ -1,3 +1,6 @@
+import type { PriceSpec } from "./price-spec";
+import { parsePriceSpec } from "./price-spec";
+
 const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const PLAN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DAY_MS = 86_400_000;
@@ -11,13 +14,13 @@ OpenCode, Gemini CLI, Copilot, …), builds a profile with totals and a
 per-harness breakdown (\`by_source\`), and opens the verdict. The profile
 travels in the URL fragment; it is not uploaded.
 
-Without --plan, it tries to read the local Claude plan (~/.claude.json),
-the Codex plan (chatgpt_plan_type claim in ~/.codex/auth.json), and the
-Cursor plan (stripeMembershipType in state.vscdb), then stores them in
-\`plans\` and \`by_source.*.plan\`. If plans or amounts are missing, an
-interactive terminal asks (plan, amount, currency, billing cycle) and
-saves the answer in ~/.pickagent/scanner.json for the next scan. It does
-not call the network or upload tokens.
+In a terminal it asks which accounts to scan, which plans you pay for,
+and confirms each price from GET /api/catalog/prices. Answers are saved
+in ~/.pickagent/scanner.json. --yes accepts the defaults: every account,
+last time's plans and prices when they exist, catalog prices, and opening
+the verdict. Without a terminal, with --json, or when an agent runs the
+command, it does not prompt. It keeps detected plans, adds every --plan,
+and applies every --price.
 
 Usage
   pickagent scan [options]
@@ -25,16 +28,24 @@ Usage
 Options
   --period YYYY-MM     Calendar month. Default: the current local month.
   --days N             Last N days, including today (1–366).
-  --plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
-                       When passed, replaces automatic detection.
+  --plan SLUG          Plan you pay for. Repeatable. Added to detected plans.
+                       E.g. claude-pro.
+  --price SPEC         Declared price. Repeatable.
+                       SPEC is <planId>=<amount><EUR|USD>[/mo|/yr]
+                       e.g. cursor-super=107.80EUR/mo
   --base-url URL       Verdict origin. Default ${DEFAULT_BASE_URL}.
   --lang es|en         Verdict language. Default: es when LC_ALL, LC_MESSAGES,
                        or LANG starts with es; otherwise en.
-  --json               Write only the JSON profile to stdout.
-  --yes                Open the browser without asking.
-  --no-open            Do not open the browser.
+  --json               Write only the JSON profile to stdout. No prompts.
+  --yes                Accept the defaults and open the browser.
+  --no-open            Do not open the browser. The URL is printed.
+  --verbose            Print the harness breakdown and notes.
   --codex              Codex only (local rollouts; experimental).
   --help               This help.
+
+PICKAGENT_API_URL overrides the catalog origin (default ${DEFAULT_BASE_URL}).
+If that request fails, a terminal asks for the amount. PICKAGENT_AGENT=1
+skips prompts, as do CI, Cursor Agent, Claude Code, and Codex.
 
 By default every detected harness is merged. --codex limits the read
 to Codex.
@@ -50,6 +61,9 @@ export type ScanArgs = {
   /** null: choose from LC_ALL / LC_MESSAGES / LANG at run time. */
   lang: "es" | "en" | null;
   codex: boolean;
+  verbose: boolean;
+  /** Declared prices from repeatable `--price`. Later flags win. */
+  prices: PriceSpec[];
 };
 
 export type ParsedArgs =
@@ -159,6 +173,8 @@ export function parseArgs(
   let baseUrl = DEFAULT_BASE_URL;
   let lang: "es" | "en" | null = null;
   let codex = false;
+  let verbose = false;
+  const prices: PriceSpec[] = [];
 
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i] ?? "";
@@ -173,6 +189,7 @@ export function parseArgs(
     else if (flag === "--yes") yes = true;
     else if (flag === "--no-open") noOpen = true;
     else if (flag === "--codex") codex = true;
+    else if (flag === "--verbose") verbose = true;
     else if (flag === "--lang") {
       const value = take()?.toLowerCase();
       if (value !== "es" && value !== "en") {
@@ -197,6 +214,17 @@ export function parseArgs(
         return { ok: false, error: "--plan expects a lowercase slug, such as claude-pro." };
       }
       plans.push(value);
+    } else if (flag === "--price") {
+      const value = take();
+      const price = value ? parsePriceSpec(value) : null;
+      if (!price) {
+        return {
+          ok: false,
+          error:
+            "--price expects <planId>=<amount><EUR|USD>[/mo|/yr], such as cursor-super=107.80EUR/mo.",
+        };
+      }
+      prices.push(price);
     } else if (flag === "--base-url") {
       const value = take();
       const base = value ? normalizeBaseUrl(value) : null;
@@ -210,7 +238,11 @@ export function parseArgs(
   if (period && days != null) {
     return { ok: false, error: "Use --period or --days, not both." };
   }
-  if (plans.length > 10) return { ok: false, error: "At most 10 plans." };
+  const explicitPlans = new Set(plans);
+  for (const price of prices) explicitPlans.add(price.planId);
+  if (plans.length > 10 || explicitPlans.size > 10) {
+    return { ok: false, error: "At most 10 plans." };
+  }
 
   const resolved =
     period ??
@@ -218,13 +250,39 @@ export function parseArgs(
   return {
     ok: true,
     help: false,
-    args: { period: resolved, plans, json, yes, noOpen, baseUrl, lang, codex },
+    args: {
+      period: resolved,
+      plans,
+      json,
+      yes,
+      noOpen,
+      baseUrl,
+      lang,
+      codex,
+      verbose,
+      prices,
+    },
   };
 }
 
 export type VerdictLang = "es" | "en";
 
 /** Spanish locales open /es/veredicto. Anything else opens /en/verdict. */
+/**
+ * True when a coding agent or CI is driving the process.
+ * Those runs get flags, not prompts.
+ */
+export function isAgentEnv(env: NodeJS.ProcessEnv): boolean {
+  const flag = env.PICKAGENT_AGENT?.trim().toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "yes") return true;
+  if (env.CI === "true" || env.CI === "1") return true;
+  if (env.CURSOR_AGENT?.trim()) return true;
+  if (env.CLAUDECODE === "1") return true;
+  if (env.CODEX_SANDBOX === "1") return true;
+  if (env.CODEX_THREAD_ID?.trim()) return true;
+  return false;
+}
+
 export function verdictLangFromEnv(env: NodeJS.ProcessEnv): VerdictLang {
   const raw = env.LC_ALL || env.LC_MESSAGES || env.LANG || "";
   return raw.trim().toLowerCase().startsWith("es") ? "es" : "en";

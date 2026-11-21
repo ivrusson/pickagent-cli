@@ -171,6 +171,33 @@ export function splitReportsByAgent(
   return out;
 }
 
+/**
+ * Daily and session rows with no agent tag. `splitReportsByAgent` leaves
+ * them out, so a Claude bucket that only has blocks would drop them.
+ * Does not change `splitReportsByAgent`.
+ */
+export function appendUntaggedClaudeRows(
+  part: CcusageReports,
+  reports: CcusageReports,
+): CcusageReports {
+  const dailyExtra = rowsOf(reports.daily, ["daily"]).filter(
+    (row) => !Array.isArray(row.agents) && (row.agent == null || row.agent === "all"),
+  );
+  const sessionExtra = rowsOf(reports.sessions, ["sessions", "session"]).filter(
+    (row) => typeof row.agent !== "string" || row.agent === "all",
+  );
+  const next: CcusageReports = { ...part };
+  if (dailyExtra.length) {
+    next.daily = { daily: [...rowsOf(part.daily, ["daily"]), ...dailyExtra] };
+  }
+  if (sessionExtra.length) {
+    next.sessions = {
+      sessions: [...rowsOf(part.sessions, ["sessions", "session"]), ...sessionExtra],
+    };
+  }
+  return next;
+}
+
 /** Reports used to build the totals profile. */
 export function totalsReports(reports: CcusageReports): CcusageReports {
   const daily = totalDailyRows(reports.daily);

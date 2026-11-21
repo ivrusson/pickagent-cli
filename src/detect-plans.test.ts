@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   applyDetectedPlans,
+  detectClaudePlans,
   detectPlans,
   jsonStringValue,
   mapClaudeTier,
@@ -124,6 +125,36 @@ test("several Claude profiles keep every mapped plan", async () => {
   assert.deepEqual([...detected.plans].sort(), ["claude-max-5x", "claude-pro"]);
   assert.equal(JSON.stringify(detected).includes("sk-do-not-keep"), false);
   assert.equal(detected.warnings.length, 0);
+});
+
+test("selected Claude directories do not pick up another account's plan", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-claude-dirs-"));
+  const selected = join(home, "work");
+  const other = join(home, "other");
+  await mkdir(selected, { recursive: true });
+  await mkdir(other, { recursive: true });
+  await writeFile(
+    join(selected, ".claude.json"),
+    JSON.stringify({ rateLimitTier: "default_claude_ai" }),
+  );
+  await writeFile(
+    join(other, ".claude.json"),
+    JSON.stringify({ rateLimitTier: "default_claude_max_5x" }),
+  );
+  await writeFile(
+    join(home, ".claude.json"),
+    JSON.stringify({ rateLimitTier: "default_claude_max_20x" }),
+  );
+  const env = { CLAUDE_CONFIG_DIR: `${selected},${other}` };
+
+  const limited = await detectClaudePlans(home, env, [selected]);
+  assert.deepEqual(limited.detections.map((found) => found.plan), ["claude-pro"]);
+
+  const all = await detectClaudePlans(home, env, null);
+  assert.deepEqual(
+    all.detections.map((found) => found.plan).sort(),
+    ["claude-max-5x", "claude-pro", "claude-ultra"],
+  );
 });
 
 test("an ambiguous Cursor tier is left for the interview", async () => {

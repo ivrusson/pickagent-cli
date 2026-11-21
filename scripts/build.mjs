@@ -18,19 +18,27 @@ try {
 const outfile = join(packageRoot, "dist", "cli.js");
 await mkdir(dirname(outfile), { recursive: true });
 
-function zodLicense() {
-  const licensePath = join(packageRoot, "node_modules", "zod", "LICENSE");
-  if (!existsSync(licensePath)) {
-    return "zod (https://github.com/colinhacks/zod) is bundled under the MIT License.";
-  }
+function licenseText(pkg, fallback) {
+  const licensePath = join(packageRoot, "node_modules", pkg, "LICENSE");
+  if (!existsSync(licensePath)) return fallback;
   return readFileSync(licensePath, "utf8").trim().replace(/\*\//g, "* /");
 }
 
 const thirdParty = `/*!
  * Third-party notices
- * This bundle includes zod. Its license follows.
+ * This bundle includes zod and @clack/prompts (@clack/core). Their licenses follow.
  *
-${zodLicense()
+ * --- zod ---
+${licenseText("zod", "zod (https://github.com/colinhacks/zod) is bundled under the MIT License.")
+  .split("\n")
+  .map((line) => ` * ${line}`)
+  .join("\n")}
+ *
+ * --- @clack/prompts ---
+${licenseText(
+  "@clack/prompts",
+  "@clack/prompts (https://github.com/bombshell-dev/clack) is bundled under the MIT License.",
+)
   .split("\n")
   .map((line) => ` * ${line}`)
   .join("\n")}

@@ -7,7 +7,7 @@ Agent skill for comparing AI plans from local usage measured by the [pickagent](
 When you ask things like "which AI plan should I pay for", "is Max worth it", or "I'm out of quota", the agent:
 
 1. Explains what the scanner reads (aggregates only, never conversations).
-2. After you confirm, runs `npx @pickagent/cli scan` with the flags that apply.
+2. After you confirm, runs `npx @pickagent/cli scan --json --no-open` with `--plan` and `--price` for each plan. Agents do not use the terminal prompts.
 3. Summarizes the profile and opens the verdict in the browser, or uses the public MCP if you would rather not open it.
 
 ## npm package

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,10 @@ import {
   resolveNpxCli,
   type CcusageLoad,
 } from "./ccusage-run";
-import { browserOpenSpawn, runScan, type ScanIo } from "./scan";
+import { limitsFrom } from "./discover";
+import { CANCEL, type ScanPrompts } from "./prompts";
+import { loadScannerConfig, saveScannerConfig, scannerConfigPath } from "./scanner-config";
+import { browserOpenSpawn, profileForSources, runScan, type ScanIo } from "./scan";
 
 const now = new Date("2026-11-05T12:00:00.000Z");
 
@@ -60,8 +63,43 @@ const sessions = {
   ],
 };
 
-function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: string; opened: string[] } {
-  const state = { out: "", err: "", opened: [] as string[] };
+function scriptedPrompts(state: { asked: number }, confirmOpen = false): ScanPrompts {
+  const touch = <T>(value: T): T => {
+    state.asked += 1;
+    return value;
+  };
+  return {
+    intro() {},
+    outro() {},
+    cancel() {},
+    note() {},
+    spin(_message, task) {
+      return task();
+    },
+    multiselect(input) {
+      return touch([...(input.initialValues ?? [])]);
+    },
+    select(input) {
+      return touch(input.initialValue ?? input.options[0]?.value ?? CANCEL);
+    },
+    autocomplete() {
+      return touch(CANCEL);
+    },
+    text() {
+      return touch("");
+    },
+    confirm() {
+      return touch(confirmOpen);
+    },
+  };
+}
+
+function io(
+  load: CcusageLoad,
+  home: string,
+  extra: Partial<ScanIo> = {},
+): ScanIo & { out: string; err: string; opened: string[]; asked: number } {
+  const state = { out: "", err: "", opened: [] as string[], asked: 0 };
   return {
     ...state,
     env: {},
@@ -70,6 +108,8 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
     timeZone: "UTC",
     isTTY: true,
     loadCcusage: () => Promise.resolve(load),
+    loadCatalog: () => Promise.resolve(null),
+    prompts: scriptedPrompts(state, false),
     stdout: (text) => {
       state.out += text;
     },
@@ -81,6 +121,7 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
       state.opened.push(url);
       return Promise.resolve();
     },
+    ...extra,
     get out() {
       return state.out;
     },
@@ -89,6 +130,9 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
     },
     get opened() {
       return state.opened;
+    },
+    get asked() {
+      return state.asked;
     },
   };
 }
@@ -297,4 +341,251 @@ test("--yes opens the verdict URL and a refusal does not", async () => {
   const declined = await runScan(["scan", "--period", "2026-10"], refused);
   assert.equal(declined, 0);
   assert.equal(refused.opened.length, 0);
+  assert.match(refused.out, /https:\/\/pickagent\.dev\/en\/verdict#p=/);
+  assert.ok(refused.asked > 0);
+});
+
+test("non-TTY scan applies --price, skips prompts, and prints the URL", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-price-"));
+  let catalogCalls = 0;
+  const scan = io({ failed: false, reports: { daily, sessions } }, home, {
+    isTTY: false,
+    env: { PICKAGENT_AGENT: "1" },
+    loadCatalog: () => {
+      catalogCalls += 1;
+      return Promise.reject(new Error("offline"));
+    },
+  });
+  const code = await runScan(
+    [
+      "scan",
+      "--period",
+      "2026-10",
+      "--no-open",
+      "--plan",
+      "claude-pro",
+      "--price",
+      "claude-pro=22EUR/mo",
+      "--json",
+    ],
+    scan,
+  );
+  assert.equal(code, 0);
+  assert.equal(scan.asked, 0);
+  assert.equal(scan.opened.length, 0);
+  assert.equal(catalogCalls, 0);
+  const parsed = parseProfile(JSON.parse(scan.out) as unknown);
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.deepEqual(parsed.profile.plans, ["claude-pro"]);
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.amount, 22);
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.currency, "EUR");
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.billing, "monthly");
+  }
+  assert.match(scan.err, /https:\/\/pickagent\.dev\/en\/verdict#p=/);
+});
+
+const sonnetBreakdown = {
+  modelName: "claude-sonnet-4-5-20250929",
+  inputTokens: 1000,
+  outputTokens: 200,
+  cacheCreationTokens: 0,
+  cacheReadTokens: 0,
+};
+
+test("accepted accounts still count Copilot usage", () => {
+  const limits = limitsFrom([
+    {
+      id: "claude-1",
+      source: "claude-code",
+      label: "Claude Code",
+      claudeDir: "/tmp/claude",
+    },
+  ]);
+  const result = profileForSources(
+    {
+      daily: {
+        daily: [
+          {
+            date: "2026-10-05",
+            agent: "copilot",
+            inputTokens: 100,
+            outputTokens: 40,
+            modelsUsed: ["gpt-4o"],
+            modelBreakdowns: [
+              { modelName: "gpt-4o", inputTokens: 100, outputTokens: 40 },
+            ],
+          },
+        ],
+      },
+      sessions: {
+        sessions: [
+          {
+            agent: "copilot",
+            models: ["gpt-4o"],
+            inputTokens: 100,
+            outputTokens: 40,
+            firstActivity: "2026-10-05T08:00:00.000Z",
+            lastActivity: "2026-10-05T09:00:00.000Z",
+            modelBreakdowns: [
+              { modelName: "gpt-4o", inputTokens: 100, outputTokens: 40 },
+            ],
+          },
+        ],
+      },
+    },
+    { period: "2026-10", plans: [], utcOffsetMinutes: 0 },
+    limits.sources,
+  );
+  assert.ok(result.profile?.by_source?.copilot);
+  assert.equal(result.profile?.by_source?.["claude-code"], undefined);
+  assert.equal(result.profile?.agent_hours.provenance, "measured");
+});
+
+test("a Claude block split keeps untagged sessions and daily tokens", () => {
+  const reports = {
+    blocks: {
+      blocks: [
+        {
+          startTime: "2026-10-05T08:00:00.000Z",
+          endTime: "2026-10-05T13:00:00.000Z",
+          isGap: false,
+        },
+      ],
+    },
+    sessions: {
+      sessions: [
+        {
+          models: ["claude-sonnet-4-5-20250929"],
+          inputTokens: 1000,
+          outputTokens: 200,
+          firstActivity: "2026-10-05T08:00:00.000Z",
+          lastActivity: "2026-10-05T10:00:00.000Z",
+          modelBreakdowns: [sonnetBreakdown],
+        },
+      ],
+    },
+    daily: {
+      daily: [
+        {
+          date: "2026-10-05",
+          inputTokens: 1000,
+          outputTokens: 200,
+          modelsUsed: ["claude-sonnet-4-5-20250929"],
+          modelBreakdowns: [sonnetBreakdown],
+        },
+      ],
+    },
+  };
+  const split = profileForSources(
+    reports,
+    { period: "2026-10", plans: [], utcOffsetMinutes: 0 },
+    new Set(["claude-code"]),
+  );
+  assert.equal(split.profile?.agent_hours.provenance, "measured");
+  assert.equal(split.profile?.agent_hours.value, 2);
+  assert.equal(split.profile?.tokens?.value[0]?.input, 1000);
+
+  const untaggedOnly = profileForSources(
+    { sessions: reports.sessions, daily: reports.daily },
+    { period: "2026-10", plans: [], utcOffsetMinutes: 0 },
+    new Set(["claude-code"]),
+  );
+  assert.equal(untaggedOnly.profile?.agent_hours.provenance, "measured");
+  assert.equal(untaggedOnly.profile?.agent_hours.value, 2);
+});
+
+test("selecting only Kimi still scans when ccusage fails", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-kimi-scan-"));
+  const dir = join(home, ".kimi", "sessions", "wd", "one");
+  await mkdir(dir, { recursive: true });
+  const start = Date.parse("2026-10-05T08:00:00.000Z");
+  await writeFile(
+    join(dir, "state.json"),
+    JSON.stringify({ createdAt: start, updatedAt: start + 3_600_000 }),
+  );
+  const scan = io({ failed: true, reports: {} }, home);
+  const code = await runScan(["scan", "--period", "2026-10", "--no-open"], scan);
+  assert.equal(code, 0);
+  assert.match(scan.out, /Kimi CLI/);
+  assert.equal(scan.err.includes("No valid profile"), false);
+});
+
+test("clearing every plan replaces the saved list", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-clear-plans-"));
+  await saveScannerConfig(scannerConfigPath(home), { plans: ["claude-pro"] });
+  const scan = io({ failed: false, reports: { daily, sessions } }, home, {
+    prompts: {
+      intro() {},
+      outro() {},
+      cancel() {},
+      note() {},
+      spin(_message, task) {
+        return task();
+      },
+      multiselect(input) {
+        if (input.message.startsWith("Plans")) return [];
+        return [...(input.initialValues ?? [])];
+      },
+      select() {
+        return "review";
+      },
+      autocomplete() {
+        return CANCEL;
+      },
+      text() {
+        return "";
+      },
+      confirm() {
+        return false;
+      },
+    },
+  });
+  const code = await runScan(["scan", "--period", "2026-10", "--no-open"], scan);
+  assert.equal(code, 0);
+  assert.deepEqual(await loadScannerConfig(scannerConfigPath(home)), {});
+});
+
+test("cancelling the plan question leaves saved plans in place", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-cancel-plans-"));
+  await saveScannerConfig(scannerConfigPath(home), { plans: ["claude-pro"] });
+  const scan = io({ failed: false, reports: { daily, sessions } }, home, {
+    prompts: {
+      intro() {},
+      outro() {},
+      cancel() {},
+      note() {},
+      spin(_message, task) {
+        return task();
+      },
+      multiselect() {
+        return CANCEL;
+      },
+      select() {
+        return CANCEL;
+      },
+      autocomplete() {
+        return CANCEL;
+      },
+      text() {
+        return "";
+      },
+      confirm() {
+        return false;
+      },
+    },
+  });
+  const code = await runScan(["scan", "--period", "2026-10", "--no-open"], scan);
+  assert.equal(code, 0);
+  assert.deepEqual((await loadScannerConfig(scannerConfigPath(home))).plans, ["claude-pro"]);
+});
+
+test("a scan still prints when preferences cannot be saved", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-readonly-"));
+  await writeFile(join(home, ".pickagent"), "not-a-directory");
+  const scan = io({ failed: false, reports: { daily, sessions } }, home);
+  const code = await runScan(["scan", "--period", "2026-10", "--no-open"], scan);
+  assert.equal(code, 0);
+  assert.match(scan.out, /measured/);
+  assert.match(scan.err, /Could not save scanner preferences/);
 });
