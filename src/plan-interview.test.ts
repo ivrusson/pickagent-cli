@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { parseProfile, type Profile } from "./profile";
 import { orchestrator } from "./profile/fixtures/orchestrator";
-import { withDeclaredPlans } from "./plan-interview";
+import { applyPriceSpecs, withDeclaredPlans } from "./plan-interview";
 import {
   declaredPrice,
   saveScannerConfig,
@@ -78,6 +78,26 @@ test("non-interactive scan applies saved prices without prompts", async () => {
   assert.equal(io.prompts.length, 0);
   assert.equal(result.profile.plan_prices?.["claude-pro"]?.amount, 22);
   assert.equal(parseProfile(result.profile).ok, true);
+});
+
+test("a --price plan stays when the profile already lists ten plans", () => {
+  const saved = Array.from({ length: 10 }, (_, index) => `saved-${index}`);
+  const profile = baseProfile(saved);
+  const next = applyPriceSpecs(profile, [
+    { planId: "extra-plan", amount: 20, currency: "EUR", billing: "monthly" },
+  ]);
+  assert.equal(next.plans[0], "extra-plan");
+  assert.equal(next.plans.length, 10);
+  assert.equal(next.plan_prices?.["extra-plan"]?.amount, 20);
+  assert.equal(next.plans.includes("saved-9"), false);
+  assert.equal(parseProfile(next).ok, true);
+
+  const overridden = applyPriceSpecs(profile, [
+    { planId: "saved-3", amount: 12, currency: "USD", billing: "yearly" },
+  ]);
+  assert.equal(overridden.plans.length, 10);
+  assert.equal(overridden.plan_prices?.["saved-3"]?.amount, 12);
+  assert.deepEqual([...overridden.plans].sort(), [...saved].sort());
 });
 
 test("a TTY does not prompt inside the silent plan fill", async () => {

@@ -44,18 +44,25 @@ export function applyDeclaredChoices(
   return { ...profile, plans: nextPlans, plan_prices };
 }
 
-/** `--price` overrides a saved amount and includes that plan. */
+/**
+ * `--price` overrides a saved amount and includes that plan.
+ * Explicit price plans take the first slots, so a full saved list cannot drop them.
+ */
 export function applyPriceSpecs(profile: Profile, specs: readonly PriceSpec[]): Profile {
   if (!specs.length) return profile;
-  const plans = [...profile.plans];
+  const explicit: string[] = [];
   const prices: Record<string, DeclaredPlanPrice> = { ...(profile.plan_prices ?? {}) };
   for (const spec of specs) {
-    if (!plans.includes(spec.planId)) plans.push(spec.planId);
+    if (!explicit.includes(spec.planId)) explicit.push(spec.planId);
     prices[spec.planId] = declaredPrice({
       amount: spec.amount,
       currency: spec.currency,
       billing: spec.billing,
     });
+  }
+  const plans = [...explicit];
+  for (const planId of profile.plans) {
+    if (!plans.includes(planId)) plans.push(planId);
   }
   return applyDeclaredChoices(profile, plans, prices);
 }

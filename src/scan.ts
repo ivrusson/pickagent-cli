@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import {
+  appendUntaggedClaudeRows,
   mergeProfileParts,
   parseProfile,
   profileFromCcusage,
@@ -51,9 +52,14 @@ import {
 import { readCursorUsage } from "./cursor-usage";
 import { noteLines, renderPreview } from "./preview";
 import { clackPrompts, isPromptCancel, type ScanPrompts } from "./prompts";
-import { saveScannerConfig, scannerConfigPath } from "./scanner-config";
+import {
+  saveScannerConfig,
+  scannerConfigPath,
+  type ScannerConfig,
+} from "./scanner-config";
 import {
   applyHourFills,
+  profileFromHourFill,
   readAntigravityFill,
   readCodexHourFill,
   readGeminiFill,
@@ -279,7 +285,7 @@ async function withLocalHarnesses(
   );
 }
 
-function profileForSources(
+export function profileForSources(
   reports: CcusageReports,
   options: { period: string; plans: string[]; utcOffsetMinutes: number },
   sources: Set<Source>,
@@ -288,6 +294,10 @@ function profileForSources(
   if (split.size === 0) {
     if (!sources.has("claude-code")) return { profile: null, warnings: [] };
     return profileFromMultiAgent(reports, options);
+  }
+  const claude = split.get("claude-code");
+  if (claude && sources.has("claude-code")) {
+    split.set("claude-code", appendUntaggedClaudeRows(claude, reports));
   }
   const parts: Profile[] = [];
   const warnings: string[] = [];
@@ -384,8 +394,11 @@ async function fromSelectedLocals(
     notes.push(...codex.warnings);
     if (codex.profile) parts.push(codex.profile);
   }
+  const bounds = boundsOf(args.period, offset);
+  if (bounds) {
+    await addSelectedFills(parts, notes, args, io, offset, limits, bounds);
+  }
   if (limits.sources.has("cursor")) {
-    const bounds = boundsOf(args.period, offset);
     if (bounds) {
       const logs = await readCursorUsage(io.env, io.home, bounds, offset);
       if (logs.sessions.size > 0) {
@@ -417,6 +430,45 @@ async function fromSelectedLocals(
   );
 }
 
+const FILL_SOURCES = ["opencode", "kimi-cli", "gemini-cli", "antigravity"] as const;
+
+async function readSelectedFill(
+  source: (typeof FILL_SOURCES)[number],
+  io: ScanIo,
+  bounds: { start: number; end: number },
+  offset: number,
+): Promise<HourFill | null> {
+  switch (source) {
+    case "opencode":
+      return readOpenCodeFill(io.home, bounds, offset);
+    case "kimi-cli":
+      return readKimiFill(io.home, bounds, offset);
+    case "gemini-cli":
+      return readGeminiFill(io.home, bounds, offset);
+    case "antigravity":
+      return readAntigravityFill(io.home, bounds, offset);
+  }
+}
+
+async function addSelectedFills(
+  parts: Profile[],
+  notes: string[],
+  args: ScanArgs,
+  io: ScanIo,
+  offset: number,
+  limits: ScanLimits,
+  bounds: { start: number; end: number },
+): Promise<void> {
+  for (const source of FILL_SOURCES) {
+    if (!limits.sources.has(source)) continue;
+    const fill = await readSelectedFill(source, io, bounds, offset);
+    if (!fill) continue;
+    const built = profileFromHourFill(fill, args.period, args.plans);
+    notes.push(...built.warnings);
+    if (built.profile) parts.push(built.profile);
+  }
+}
+
 async function withDetectedPlans(
   profile: Profile,
   args: ScanArgs,
@@ -440,6 +492,7 @@ async function withDetectedPlans(
     home: io.home,
     env: io.env,
     sources: [...sources],
+    claudeDirs: limits ? limits.claudeDirs : null,
   });
   const next = applyDetectedPlans(profile, detected, {
     cliPlans: mergePlanIds(detected.plans, args.plans),
@@ -487,6 +540,14 @@ async function fillZeroHours(
   await take("gemini-cli", () => readGeminiFill(io.home, bounds, offset));
   await take("antigravity", () => readAntigravityFill(io.home, bounds, offset));
   return applyHourFills(profile, fills);
+}
+
+async function savePreferences(io: ScanIo, config: ScannerConfig): Promise<void> {
+  try {
+    await saveScannerConfig(scannerConfigPath(io.home), config);
+  } catch {
+    io.stderr("Could not save scanner preferences.\n");
+  }
 }
 
 function wantsPrompts(args: ScanArgs, io: ScanIo): boolean {
@@ -614,9 +675,7 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
     } else {
       profile = parsed.profile;
       const memory = rememberPlans(choice.plans, choice.prices);
-      if (memory.plans?.length || memory.plan_prices) {
-        await saveScannerConfig(scannerConfigPath(io.home), memory);
-      }
+      await savePreferences(io, memory);
     }
   } else {
     const resolved = await acceptDefaults(profile, args, io);
@@ -626,7 +685,7 @@ export async function runScan(argv: string[], io: ScanIo): Promise<number> {
     if (args.yes || args.prices.length) {
       const memory = rememberPlans(profile.plans, profile.plan_prices ?? {});
       if (memory.plans?.length || memory.plan_prices) {
-        await saveScannerConfig(scannerConfigPath(io.home), memory);
+        await savePreferences(io, memory);
       }
     }
   }

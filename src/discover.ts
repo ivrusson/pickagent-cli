@@ -7,7 +7,7 @@ import {
   cursorTrackingDbPath,
 } from "./cursor-paths";
 import { codexHomeDir } from "./codex-rollout";
-import type { Source } from "./profile";
+import { SOURCES, type Source } from "./profile/ids";
 
 export type DiscoveredAccount = {
   id: string;
@@ -183,8 +183,22 @@ export async function discoverAccounts(
   return accounts;
 }
 
+/** Sources `discoverAccounts` can offer. Anything else in `SOURCES` stays in the scan. */
+const OFFERED_SOURCES = new Set<Source>([
+  "claude-code",
+  "cursor",
+  "opencode",
+  "kimi-cli",
+  "codex",
+  "gemini-cli",
+  "antigravity",
+]);
+
 export function limitsFrom(accounts: readonly DiscoveredAccount[]): ScanLimits {
   const sources = new Set(accounts.map((account) => account.source));
+  for (const source of SOURCES) {
+    if (!OFFERED_SOURCES.has(source)) sources.add(source);
+  }
   const claudeDirs = accounts
     .map((account) => account.claudeDir)
     .filter((dir): dir is string => Boolean(dir));

@@ -224,8 +224,10 @@ function rankTiers(candidates: { key: string; raw: string }[]): { key: string; r
 export async function detectClaudePlans(
   home: string,
   env: NodeJS.ProcessEnv,
+  roots: readonly string[] | null = null,
 ): Promise<{ detections: DetectedPlan[]; warnings: string[] }> {
-  const roots = await claudeConfigDirs(env, home);
+  const selected = roots;
+  const dirs = selected ?? (await claudeConfigDirs(env, home));
   const detections: DetectedPlan[] = [];
   const warnings: string[] = [];
   const seen = new Set<string>();
@@ -240,7 +242,7 @@ export async function detectClaudePlans(
 
   const buckets: { key: string; raw: string }[][] = [];
   let attachedHome = false;
-  for (const root of roots) {
+  for (const root of dirs) {
     const own = [
       ...tierCandidates(await readText(join(root, ".credentials.json"))),
       ...tierCandidates(await readText(join(root, ".claude.json"))),
@@ -252,7 +254,9 @@ export async function detectClaudePlans(
     }
     if (own.length) buckets.push(own);
   }
-  if (!attachedHome && homeAccount) buckets.push(tierCandidates(homeAccount));
+  if (!attachedHome && homeAccount && selected == null) {
+    buckets.push(tierCandidates(homeAccount));
+  }
 
   for (const candidates of buckets) {
     const ranked = rankTiers(candidates);
@@ -364,12 +368,21 @@ export async function detectPlans(input: {
   env: NodeJS.ProcessEnv;
   /** Only attach plans for these harnesses (e.g. those present in by_source). */
   sources?: Source[];
+  /**
+   * Claude config directories to read. Null reads every configured directory.
+   * An array limits detection to that selection.
+   */
+  claudeDirs?: readonly string[] | null;
 }): Promise<DetectPlansResult> {
   const warnings: string[] = [];
   const detections: DetectedPlan[] = [];
   const allow = input.sources ? new Set(input.sources) : null;
 
-  const claude = await detectClaudePlans(input.home, input.env);
+  const claude = await detectClaudePlans(
+    input.home,
+    input.env,
+    input.claudeDirs ?? null,
+  );
   warnings.push(...claude.warnings);
   for (const found of claude.detections) {
     if (!allow || allow.has("claude-code")) detections.push(found);
@@ -393,10 +406,10 @@ export async function detectPlans(input: {
   return { detections, plans, warnings };
 }
 
-/** Detected plans, then any `--plan` ids that are not already listed. */
+/** Explicit `--plan` ids first, then detected plans, capped at 10. */
 export function mergePlanIds(detected: readonly string[], extra: readonly string[]): string[] {
   const plans: string[] = [];
-  for (const planId of [...detected, ...extra]) {
+  for (const planId of [...extra, ...detected]) {
     if (!plans.includes(planId)) plans.push(planId);
     if (plans.length === 10) break;
   }

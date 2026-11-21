@@ -238,7 +238,11 @@ export function parseArgs(
   if (period && days != null) {
     return { ok: false, error: "Use --period or --days, not both." };
   }
-  if (plans.length > 10) return { ok: false, error: "At most 10 plans." };
+  const explicitPlans = new Set(plans);
+  for (const price of prices) explicitPlans.add(price.planId);
+  if (plans.length > 10 || explicitPlans.size > 10) {
+    return { ok: false, error: "At most 10 plans." };
+  }
 
   const resolved =
     period ??

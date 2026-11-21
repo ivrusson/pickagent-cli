@@ -88,6 +88,8 @@ const WARNING_TEXT: Record<string, string> = {
     "A plan is missing its declared amount; the comparator will use the catalog price.",
   plan_price_invalid:
     "Declared amounts failed validation; they are omitted from the profile.",
+  model_share_unmeasured:
+    "Local logs have clocks but no token breakdown. The model share is unmeasured and stays estimated.",
 };
 
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });

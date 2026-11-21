@@ -132,7 +132,7 @@ test("yes reuses saved plans and still keeps --plan", async () => {
   });
   assert.equal(isCancel(choice), false);
   if (isCancel(choice)) return;
-  assert.deepEqual(choice.plans, ["claude-pro", "cursor-super"]);
+  assert.deepEqual(choice.plans, ["cursor-super", "claude-pro"]);
   assert.equal(choice.prices["claude-pro"]?.amount, 20);
   assert.equal(choice.prices["cursor-super"], undefined);
 });
@@ -154,6 +154,24 @@ test("a catalog price can be accepted as shown", async () => {
   if (isCancel(choice)) return;
   assert.equal(choice.prices["cursor-super"]?.amount, 107.8);
   assert.ok(prompts.messages.includes("Cursor Super — €107.80/mo (VAT incl.)"));
+});
+
+test("yes keeps a --price plan when ten plans are already saved", async () => {
+  const saved = Array.from({ length: 10 }, (_, index) => `saved-${index}`);
+  const prompts = script({ select: ["yes"] });
+  const choice = await choosePlansAndPrices({
+    prompts,
+    detected: saved,
+    specs: [{ planId: "extra-plan", amount: 20, currency: "EUR", billing: "monthly" }],
+    config: { plans: saved },
+    catalog: null,
+  });
+  assert.equal(isCancel(choice), false);
+  if (isCancel(choice)) return;
+  assert.equal(choice.plans[0], "extra-plan");
+  assert.equal(choice.plans.length, 10);
+  assert.equal(choice.prices["extra-plan"]?.amount, 20);
+  assert.equal(choice.plans.includes("saved-9"), false);
 });
 
 function isCancel(value: unknown): value is Cancel {

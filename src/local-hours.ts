@@ -9,6 +9,8 @@ import {
 } from "./profile/ids";
 import {
   METRIC_KEYS,
+  PROFILE_SCHEMA_ID,
+  estimated,
   parseProfile,
   periodDays,
   type Profile,
@@ -31,6 +33,8 @@ export type HourFill = {
   hours: number;
   activeDays: number;
   sessions: number;
+  medianMinutes: number;
+  activity: { hours: number[]; weekdays: number[] };
   tokens?: TokenRow[];
 };
 
@@ -44,12 +48,49 @@ function roundHours(ms: number): number {
   return hours > 0 ? Math.max(0.1, round1(hours)) : 0;
 }
 
+function activityFromSpans(
+  spans: Span[],
+  offsetMinutes: number,
+): { hours: number[]; weekdays: number[] } {
+  const hours = new Array<number>(24).fill(0);
+  const weekdays = new Array<number>(7).fill(0);
+  const offsetMs = offsetMinutes * 60_000;
+  for (const { start, end } of spans) {
+    if (!(end > start)) continue;
+    let t = start;
+    while (t < end) {
+      const next = Math.min(
+        end,
+        (Math.floor((t + offsetMs) / 3_600_000) + 1) * 3_600_000 - offsetMs,
+      );
+      const local = new Date(t + offsetMs);
+      const minutes = (next - t) / 60_000;
+      hours[local.getUTCHours()]! += minutes;
+      weekdays[(local.getUTCDay() + 6) % 7]! += minutes;
+      if (next <= t) break;
+      t = next;
+    }
+  }
+  return {
+    hours: hours.map((value) => Math.round(value)),
+    weekdays: weekdays.map((value) => Math.round(value)),
+  };
+}
+
 export function summarizeSpans(
   spans: Span[],
   bounds: Bounds,
   offsetMinutes: number,
-): { hours: number; activeDays: number; sessions: number } {
+): {
+  hours: number;
+  activeDays: number;
+  sessions: number;
+  medianMinutes: number;
+  activity: { hours: number[]; weekdays: number[] };
+} {
   const days = new Set<string>();
+  const durations: number[] = [];
+  const clipped: Span[] = [];
   let ms = 0;
   let sessions = 0;
   for (const span of spans) {
@@ -63,6 +104,8 @@ export function summarizeSpans(
     if (duration > CAP_MS) duration = CAP_MS;
     ms += duration;
     sessions += 1;
+    durations.push(duration);
+    clipped.push({ start, end: start + duration });
     const last = Math.min(bounds.end - 1, start + duration - 1);
     for (let t = start; t <= last; t += 3_600_000) {
       days.add(localDay(t, offsetMinutes));
@@ -70,7 +113,17 @@ export function summarizeSpans(
     }
     days.add(localDay(last, offsetMinutes));
   }
-  return { hours: roundHours(ms), activeDays: days.size, sessions };
+  durations.sort((a, b) => a - b);
+  const mid = durations.length
+    ? durations[Math.floor((durations.length - 1) / 2)]!
+    : 0;
+  return {
+    hours: roundHours(ms),
+    activeDays: days.size,
+    sessions,
+    medianMinutes: Math.min(1440, Math.round(mid / 60_000)),
+    activity: activityFromSpans(clipped, offsetMinutes),
+  };
 }
 
 function safeModel(value: string): string | null {
@@ -500,4 +553,75 @@ export function applyHourFills(profile: Profile, fills: HourFill[]): Profile {
   }
   const parsed = parseProfile(labeled);
   return parsed.ok ? parsed.profile : profile;
+}
+
+function hasMass(weights: number[]): boolean {
+  return weights.some((value) => value > 0);
+}
+
+/** Kimi CLI only runs Kimi models. Other harnesses stay `other` until a model is read. */
+function unmeasuredFamily(source: Source): ModelFamily {
+  return source === "kimi-cli" ? "kimi" : "other";
+}
+
+/**
+ * A profile from one local hour reader, with no Claude or Codex profile required.
+ * Hours come from the file clocks already in the fill. Token rows are kept when
+ * the reader found them. A fill with clocks but no tokens gets an estimated
+ * model share and no invented token counts.
+ */
+export function profileFromHourFill(
+  fill: HourFill,
+  period: string,
+  plans: string[],
+): { profile: Profile | null; warnings: string[] } {
+  if (
+    fill.hours <= 0 ||
+    !hasMass(fill.activity.hours) ||
+    !hasMass(fill.activity.weekdays)
+  ) {
+    return { profile: null, warnings: [] };
+  }
+  const source = fill.source;
+  const warnings: string[] = [];
+  let byModel: Profile["by_model"]["value"];
+  if (fill.tokens?.length) {
+    byModel = sharesOf(fill.tokens);
+    if (!Object.keys(byModel).length) return { profile: null, warnings };
+  } else {
+    byModel = { [unmeasuredFamily(source)]: 1 };
+    warnings.push(`${source}:model_share_unmeasured`);
+  }
+  const dayCap = periodDays(period) ?? 366;
+  const activeDays = Math.min(dayCap, fill.activeDays);
+  const profile: Profile = {
+    schema: PROFILE_SCHEMA_ID,
+    period,
+    plans,
+    provenance: { [source]: "estimated" },
+    by_source: {
+      [source]: {
+        agent_hours: fill.hours,
+        provenance: "estimated",
+        active_days: activeDays > 0 ? activeDays : undefined,
+        sessions: fill.sessions > 0 ? fill.sessions : undefined,
+      },
+    },
+    agent_hours: estimated(fill.hours, source),
+    activity: estimated(fill.activity, source),
+    by_model: estimated(byModel, source),
+  };
+  if (activeDays > 0) profile.active_days = estimated(activeDays, source);
+  if (fill.sessions > 0) {
+    profile.sessions = estimated(
+      { count: fill.sessions, median_minutes: fill.medianMinutes },
+      source,
+    );
+  }
+  if (fill.tokens?.length) {
+    profile.tokens = estimated(fill.tokens, source);
+    profile.models_count = estimated(fill.tokens.length, source);
+  }
+  const parsed = parseProfile(profile);
+  return { profile: parsed.ok ? parsed.profile : null, warnings };
 }

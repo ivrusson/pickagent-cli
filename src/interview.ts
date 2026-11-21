@@ -213,9 +213,9 @@ export async function choosePlansAndPrices(input: {
     if (isPromptCancel(answer)) return CANCEL;
     if (answer === "yes") {
       const plans = unique([
-        ...(input.config.plans?.length ? input.config.plans : input.detected),
-        ...forced,
         ...flagged.keys(),
+        ...forced,
+        ...(input.config.plans?.length ? input.config.plans : input.detected),
       ]);
       const prices: Record<string, DeclaredPlanPrice> = {};
       for (const planId of plans) {

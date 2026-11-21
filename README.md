@@ -6,7 +6,7 @@ Scanner page: https://pickagent.dev/en/escaner
 
 ## Install and use
 
-Requires Node 20 or newer. Windows: untested.
+Requires Node 20.12 or newer. Windows: untested.
 
 On a machine that does not have this repository:
 
@@ -156,7 +156,7 @@ On a clean clone: `npm ci && npm run build && node dist/cli.js scan --help && np
 
 ## Why the code is public
 
-The profile is not uploaded. It travels in the `#p=` URL fragment, and the browser does not send the fragment to the server. The repository is public so anyone can check: the scanner does not `fetch` the profile, it opens no network beyond `npx` resolving `ccusage` and opening the browser, and the `src/profile/` schema has no place for conversation text. The verdict page reads that fragment in the browser. The verdict calculation is not in this repository.
+The profile is not uploaded. It travels in the `#p=` URL fragment, and the browser does not send the fragment to the server. The repository is public so anyone can check: the scanner does not `fetch` the profile. The only network it opens is `npx` resolving `ccusage`, a `GET /api/catalog/prices` request that sends no profile data (including when `--no-open` is set), and opening the browser. The `src/profile/` schema has no place for conversation text. The verdict page reads that fragment in the browser. The verdict calculation is not in this repository.
 
 ## How it is published
 

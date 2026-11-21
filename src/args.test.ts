@@ -94,6 +94,40 @@ test("--price is repeatable and the last value wins", () => {
   assert.equal(parseArgs(["scan", "--price", "Claude=20EUR"], now, 0).ok, false);
 });
 
+test("explicit plans and prices share the ten-plan limit", () => {
+  const ten = Array.from({ length: 10 }, (_, index) => `plan-${index}`);
+  const accepted = parseArgs(
+    ["scan", ...ten.flatMap((id) => ["--price", `${id}=1EUR`])],
+    now,
+    0,
+  );
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok || accepted.help) return;
+  assert.equal(accepted.args.prices.length, 10);
+
+  const extraPrice = parseArgs(
+    ["scan", ...ten.flatMap((id) => ["--price", `${id}=1EUR`]), "--price", "extra-plan=2EUR"],
+    now,
+    0,
+  );
+  assert.equal(extraPrice.ok, false);
+  if (extraPrice.ok) return;
+  assert.match(extraPrice.error, /At most 10 plans/);
+
+  const override = parseArgs(
+    ["scan", ...ten.flatMap((id) => ["--plan", id]), "--price", "plan-0=4EUR"],
+    now,
+    0,
+  );
+  assert.equal(override.ok, true);
+  const crowded = parseArgs(
+    ["scan", ...ten.flatMap((id) => ["--plan", id]), "--price", "extra-plan=4EUR"],
+    now,
+    0,
+  );
+  assert.equal(crowded.ok, false);
+});
+
 test("month bounds are local and exclusive at the end", () => {
   const bounds = boundsOf("2026-10", 60);
   assert.ok(bounds);
