@@ -11,6 +11,7 @@ import {
   resolveNpxCli,
   type CcusageLoad,
 } from "./ccusage-run";
+import { CANCEL, type ScanPrompts } from "./prompts";
 import { browserOpenSpawn, runScan, type ScanIo } from "./scan";
 
 const now = new Date("2026-11-05T12:00:00.000Z");
@@ -60,8 +61,43 @@ const sessions = {
   ],
 };
 
-function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: string; opened: string[] } {
-  const state = { out: "", err: "", opened: [] as string[] };
+function scriptedPrompts(state: { asked: number }, confirmOpen = false): ScanPrompts {
+  const touch = <T>(value: T): T => {
+    state.asked += 1;
+    return value;
+  };
+  return {
+    intro() {},
+    outro() {},
+    cancel() {},
+    note() {},
+    spin(_message, task) {
+      return task();
+    },
+    multiselect(input) {
+      return touch([...(input.initialValues ?? [])]);
+    },
+    select(input) {
+      return touch(input.initialValue ?? input.options[0]?.value ?? CANCEL);
+    },
+    autocomplete() {
+      return touch(CANCEL);
+    },
+    text() {
+      return touch("");
+    },
+    confirm() {
+      return touch(confirmOpen);
+    },
+  };
+}
+
+function io(
+  load: CcusageLoad,
+  home: string,
+  extra: Partial<ScanIo> = {},
+): ScanIo & { out: string; err: string; opened: string[]; asked: number } {
+  const state = { out: "", err: "", opened: [] as string[], asked: 0 };
   return {
     ...state,
     env: {},
@@ -70,6 +106,8 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
     timeZone: "UTC",
     isTTY: true,
     loadCcusage: () => Promise.resolve(load),
+    loadCatalog: () => Promise.resolve(null),
+    prompts: scriptedPrompts(state, false),
     stdout: (text) => {
       state.out += text;
     },
@@ -81,6 +119,7 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
       state.opened.push(url);
       return Promise.resolve();
     },
+    ...extra,
     get out() {
       return state.out;
     },
@@ -89,6 +128,9 @@ function io(load: CcusageLoad, home: string): ScanIo & { out: string; err: strin
     },
     get opened() {
       return state.opened;
+    },
+    get asked() {
+      return state.asked;
     },
   };
 }
@@ -297,4 +339,46 @@ test("--yes opens the verdict URL and a refusal does not", async () => {
   const declined = await runScan(["scan", "--period", "2026-10"], refused);
   assert.equal(declined, 0);
   assert.equal(refused.opened.length, 0);
+  assert.match(refused.out, /https:\/\/pickagent\.dev\/en\/verdict#p=/);
+  assert.ok(refused.asked > 0);
+});
+
+test("non-TTY scan applies --price, skips prompts, and prints the URL", async () => {
+  const home = await mkdtemp(join(tmpdir(), "pickagent-price-"));
+  let catalogCalls = 0;
+  const scan = io({ failed: false, reports: { daily, sessions } }, home, {
+    isTTY: false,
+    env: { PICKAGENT_AGENT: "1" },
+    loadCatalog: () => {
+      catalogCalls += 1;
+      return Promise.reject(new Error("offline"));
+    },
+  });
+  const code = await runScan(
+    [
+      "scan",
+      "--period",
+      "2026-10",
+      "--no-open",
+      "--plan",
+      "claude-pro",
+      "--price",
+      "claude-pro=22EUR/mo",
+      "--json",
+    ],
+    scan,
+  );
+  assert.equal(code, 0);
+  assert.equal(scan.asked, 0);
+  assert.equal(scan.opened.length, 0);
+  assert.equal(catalogCalls, 0);
+  const parsed = parseProfile(JSON.parse(scan.out) as unknown);
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.deepEqual(parsed.profile.plans, ["claude-pro"]);
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.amount, 22);
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.currency, "EUR");
+    assert.equal(parsed.profile.plan_prices?.["claude-pro"]?.billing, "monthly");
+  }
+  assert.match(scan.err, /https:\/\/pickagent\.dev\/en\/verdict#p=/);
 });

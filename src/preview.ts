@@ -138,11 +138,50 @@ export function noteLines(warnings: string[]): string[] {
   return lines;
 }
 
+function planSummary(profile: Profile, names?: Record<string, string>): string {
+  if (!profile.plans.length) return "none given";
+  return profile.plans
+    .map((planId) => {
+      const price = profile.plan_prices?.[planId];
+      const name = names?.[planId];
+      const title = name && name !== planId ? name : planId;
+      if (!price) return title;
+      const symbol = price.currency === "EUR" ? "€" : "$";
+      const per = price.billing === "yearly" ? "/yr" : "/mo";
+      return `${title} — ${symbol}${price.amount.toFixed(2)}${per}`;
+    })
+    .join(", ");
+}
+
 export function renderPreview(
   profile: Profile,
-  meta: { url: string; warnings: string[]; scannedAt: string; reader: string },
+  meta: {
+    url: string;
+    warnings: string[];
+    scannedAt: string;
+    reader: string;
+    /** Harness breakdown and notes. Default is the short summary. */
+    verbose?: boolean;
+    /** Printed only when the browser was not opened. */
+    includeUrl?: boolean;
+    names?: Record<string, string>;
+  },
 ): string {
   const sources = sourcesLine(profile);
+  const plans = `Plans you pay for today: ${planSummary(profile, meta.names)}.`;
+  if (!meta.verbose) {
+    const lines = [
+      "pickagent",
+      `Period ${profile.period}. Sources ${sources}. Read ${meta.scannedAt}.`,
+      "",
+      `Agent-hours: ${number.format(profile.agent_hours.value)} (${how(profile.agent_hours.provenance)}, total, ${profile.period})`,
+      plans,
+      "",
+      "The profile stays on your machine. It travels in the URL fragment; the server does not receive it.",
+    ];
+    if (meta.includeUrl) lines.push(meta.url);
+    return lines.join("\n");
+  }
   const lines = [
     "pickagent",
     `Period ${profile.period}. Sources ${sources}. Read ${meta.scannedAt}.`,
@@ -194,8 +233,7 @@ export function renderPreview(
       `Blocks: ${number.format(profile.blocks.value.count)}.${when} (${how(profile.blocks.provenance)}, ${profile.period})`,
     );
   }
-  const plans = profile.plans.length ? profile.plans.join(", ") : "none given";
-  lines.push(`Plans you pay for today: ${plans}.`);
+  lines.push(plans);
   const notes = noteLines(meta.warnings);
   if (notes.length) {
     lines.push("", "Notes:");
@@ -205,7 +243,7 @@ export function renderPreview(
     "",
     "The profile stays on your machine. It travels in the URL fragment; the server does not receive it.",
     "It does not include messages, paths, or project names.",
-    meta.url,
   );
+  if (meta.includeUrl) lines.push(meta.url);
   return lines.join("\n");
 }

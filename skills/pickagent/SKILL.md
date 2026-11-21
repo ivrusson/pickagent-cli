@@ -17,30 +17,32 @@ Help the user get a **verdict** (which AI plan fits their measured usage). Speak
 1. Briefly say you will run the local open-source scanner (`npx @pickagent/cli scan`). It only reads **aggregated** usage on their machine.
 2. State the privacy contract in one or two lines (do not paraphrase loosely):
    - **Reads:** local Claude Code or Codex logs; aggregated tokens, hours, models, and windows; hour-level timestamps (no clock minutes in stored hours).
-   - **Never reads:** conversation content, API keys, project names, paths, or clear session identifiers. Nothing is uploaded; the profile travels in the browser URL fragment only.
+   - **Never reads:** conversation content, API keys, project names, paths, or clear session identifiers. Nothing is uploaded; the profile travels in the browser URL fragment only. A catalog price request, when it runs, sends no profile.
 3. Ask which plan they pay today and map it to a catalog slug (e.g. `claude-pro`; use `list_plans` if the MCP is connected, never guess a slug) and the period if they care (`--period YYYY-MM` or `--days N`).
 4. Ask permission to run the scan. **Do not** read `~/.claude`, `~/.codex`, or any `.jsonl` logs yourself — only the CLI may read them.
 
 ## Run the scan
 
-Execute in the user’s project directory (or home if they prefer):
+Agents do not get prompts. Run this in the user’s project directory (or home if they prefer), with `--json` and the plans they named. Do not wait on the terminal menu.
 
 ```bash
-npx @pickagent/cli scan
+npx @pickagent/cli scan --json --no-open --plan claude-pro --price claude-pro=22EUR/mo
 ```
 
 Add flags from what they told you:
 
 | Flag               | When                                                                                   |
 | ------------------ | -------------------------------------------------------------------------------------- |
-| `--plan <slug>`    | Repeat for each plan they pay (e.g. `--plan claude-pro`).                              |
+| `--plan <slug>`    | Repeat for each plan they pay (e.g. `--plan claude-pro`). Added to detected plans.    |
+| `--price <spec>`   | Repeat. `<planId>=<amount><EUR\|USD>[/mo\|/yr]`, e.g. `--price claude-pro=22EUR/mo`.  |
 | `--period YYYY-MM` | Calendar month (default: current local month).                                         |
 | `--days N`         | Last N days (1–366); do not combine with `--period`.                                   |
 | `--codex`          | User runs **Codex** (not Claude Code); experimental.                                   |
-| `--yes`            | Auto-open browser without a second prompt (only if they asked).                        |
-| `--no-open`        | Do not open a browser.                                                                 |
+| `--yes`            | Accept every default and open the browser (only if they asked).                        |
+| `--no-open`        | Do not open a browser. The URL is printed.                                             |
+| `--verbose`        | Print the harness breakdown and notes. Default output is a short summary.             |
 | `--lang es` or `en` | Force the verdict page. Default follows `LC_ALL`, then `LC_MESSAGES`, then `LANG` (`es` → `/es/veredicto`, otherwise `/en/verdict`). |
-| `--json`           | Print `pickagent.profile/v1` on stdout (pair with `--no-open` for in-agent follow-up). |
+| `--json`           | Print `pickagent.profile/v1` on stdout. No prompts. Pair with `--no-open`.            |
 
 After a successful run, summarize the profile in plain language: agent hours, busy windows, model mix, and `current_plan_ids` / provenance (`measured` vs `estimated`). Offer the verdict URL the CLI printed (`https://pickagent.dev/en/verdict#p=…`, or `/es/veredicto` when the locale is Spanish).
 

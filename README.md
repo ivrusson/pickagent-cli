@@ -23,19 +23,27 @@ npx @pickagent/cli scan --help
 ```text
 --period YYYY-MM     Calendar month. Default: the current local month.
 --days N             Last N days, including today (1–366).
---plan SLUG          Plan you pay for today. Repeatable. E.g. claude-pro.
+--plan SLUG          Plan you pay for. Repeatable. Added to detected plans.
+--price SPEC         Declared price. Repeatable.
+                     SPEC is <planId>=<amount><EUR|USD>[/mo|/yr]
+                     e.g. cursor-super=107.80EUR/mo
 --base-url URL       Verdict origin. Default https://pickagent.dev.
 --lang es|en         Verdict language. Default: es when LC_ALL, LC_MESSAGES,
                      or LANG starts with es; otherwise en.
---json               Write only the JSON profile to stdout.
---yes                Open the browser without asking.
---no-open            Do not open the browser.
+--json               Write only the JSON profile to stdout. No prompts.
+--yes                Accept the defaults and open the browser.
+--no-open            Do not open the browser. The URL is printed.
+--verbose            Print the harness breakdown and notes.
 --codex              Codex only (local rollouts; experimental).
 --help               This help.
 ```
 
 By default every harness is merged. `--codex` limits the read to Codex.
-`--plan` replaces automatic plan detection.
+`--plan` adds a plan. It does not drop plans detected on the machine.
+
+In a terminal, `pickagent scan` asks which accounts to include (all checked), which plans you pay for, and confirms each catalog price. `--yes` accepts those defaults, including last time's plans and prices when `~/.pickagent/scanner.json` has them. Without a terminal, with `--json`, or when an agent runs the command (`PICKAGENT_AGENT=1`, `CI`, Cursor Agent, Claude Code, or Codex), there are no prompts: pass `--plan` and `--price`.
+
+`PICKAGENT_API_URL` is the catalog origin for `GET /api/catalog/prices` (default `https://pickagent.dev`). If that request fails, a terminal asks for the amount, currency, and billing cycle.
 
 From a clone of this repository:
 
@@ -60,7 +68,7 @@ Every agent ccusage detects, by default.
 3. If ccusage fails to start or fails validation, the local parser reads every Claude config directory: comma-separated `CLAUDE_CONFIG_DIR`, each `config_dir` in `~/.claude-subs/registry.json` (that field only), and the defaults `~/.claude` and `~/.config/claude`. Usage is summed as one `claude-code` source.
 4. If local Codex rollouts exist and ccusage did not contribute Codex, they are merged into the profile.
 5. If Cursor agent-transcripts or `ai-tracking` exist and ccusage did not contribute Cursor, they are merged (estimated hours; chat text is not read).
-6. Plans (no network): it reads the Claude tier in every config directory (`default_claude_ai` is Claude Pro; Max 5× / 20× map to `claude-max-5x` / `claude-ultra`), the `chatgpt_plan_type` JWT claim in `~/.codex/auth.json`, and Cursor `stripeMembershipType` in `state.vscdb`. Old Stripe ids `pro` and `pro_plus` map to `cursor-pro-legacy` and `cursor-pro-plus-legacy`, not Premium or Super. `ultra` is ambiguous, so an interactive terminal asks. Several Claude profiles can contribute several plans. `--plan` replaces detection. Tokens and email are not uploaded.
+6. Plans: it reads the Claude tier in every config directory (`default_claude_ai` is Claude Pro; Max 5× / 20× map to `claude-max-5x` / `claude-ultra`), the `chatgpt_plan_type` JWT claim in `~/.codex/auth.json`, and Cursor `stripeMembershipType` in `state.vscdb`. Old Stripe ids `pro` and `pro_plus` map to `cursor-pro-legacy` and `cursor-pro-plus-legacy`, not Premium or Super. `ultra` stays unmapped until you add a plan. Several Claude profiles can contribute several plans. `--plan` adds to that list. Tokens and email are not uploaded. Prices come from `GET /api/catalog/prices` (names and amounts only). A terminal can confirm or replace them. The request does not send the profile.
 7. OpenCode, Kimi (`~/.kimi` and `~/.kimi-code`), and Codex hours that ccusage leaves at 0 are estimated from session timestamps. Gemini CLI (`~/.gemini/tmp`) and Antigravity (`~/.gemini/antigravity`) are included the same way: tokens by family when the file has a usage object, otherwise hours and days only.
 
 ccusage is not part of pickagent. It is third-party code, and each run resolves it with `npx` as `ccusage@latest`, with no pinned version.
@@ -82,14 +90,15 @@ ccusage output is filtered before use: dates, models, tokens, and the `isGap` / 
 
 ## Network
 
-Only two network exits:
+Three network exits:
 
 - `npx` may download `ccusage@latest` the first time. ccusage is launched with `--offline` so it does not request prices.
+- `GET {origin}/api/catalog/prices` for plan names and amounts. The origin is `PICKAGENT_API_URL` or `https://pickagent.dev`. The request body is empty. If it fails, prices are typed in (or passed with `--price`).
 - Opening the browser at the verdict URL, after confirmation.
 
-No other HTTP. No database.
+No other HTTP. No database. The profile is not uploaded.
 
-To see those calls on Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx @pickagent/cli scan --no-open`. `strace` is Linux-only; macOS does not have it. The only expected connection is `npx` downloading `ccusage`. With `--no-open` the browser does not open.
+To see those calls on Linux: `strace -f -e trace=network -o /tmp/pickagent.strace npx @pickagent/cli scan --no-open`. `strace` is Linux-only; macOS does not have it. The expected connections are `npx` downloading `ccusage`, and `GET /api/catalog/prices`. With `--no-open` the browser does not open.
 
 ## Claude blocks (local parser)
 
@@ -131,7 +140,7 @@ A block counts when `rate_limits.rate_limit_reached_type` is a non-empty string.
 
 ## Output
 
-Without `--json`, an English summary and the URL. It asks before opening the browser. `--yes` opens without asking. `--no-open` does not open. `--json` writes only the profile to stdout; the browser opens only when you also pass `--yes` and not `--no-open`.
+Without `--json`, a short English summary: period, sources, agent-hours, and the plans with the amounts you confirmed. `--verbose` adds the harness breakdown and notes. It asks before opening the browser (`Open verdict`). The URL is printed only when the browser is not opened. `--yes` accepts the defaults and opens. `--no-open` does not open, and prints the URL. `--json` writes only the profile to stdout (the URL goes to stderr when the browser stays closed). The browser opens only when you also pass `--yes` and not `--no-open`.
 
 The URL is `{base}/es/veredicto` when `LC_ALL`, `LC_MESSAGES`, or `LANG` starts with `es`, and `{base}/en/verdict` otherwise, plus `profileToHash()`. `--lang es` or `--lang en` overrides that. Default base: `https://pickagent.dev`. `/en/veredicto` redirects on the site.
 

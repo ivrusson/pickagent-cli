@@ -393,6 +393,16 @@ export async function detectPlans(input: {
   return { detections, plans, warnings };
 }
 
+/** Detected plans, then any `--plan` ids that are not already listed. */
+export function mergePlanIds(detected: readonly string[], extra: readonly string[]): string[] {
+  const plans: string[] = [];
+  for (const planId of [...detected, ...extra]) {
+    if (!plans.includes(planId)) plans.push(planId);
+    if (plans.length === 10) break;
+  }
+  return plans;
+}
+
 /** Merge detected plans into a profile's `plans` and `by_source.*.plan`. */
 export function applyDetectedPlans<
   T extends {

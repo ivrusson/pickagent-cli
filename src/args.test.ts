@@ -67,6 +67,33 @@ test("locale es opens the Spanish verdict", () => {
   assert.equal(verdictLangFromEnv({}), "en");
 });
 
+test("--price is repeatable and the last value wins", () => {
+  const parsed = parseArgs(
+    [
+      "scan",
+      "--price",
+      "cursor-super=107.80EUR/mo",
+      "--price",
+      "claude-pro=240USD/yr",
+      "--price",
+      "cursor-super=90EUR",
+      "--verbose",
+    ],
+    now,
+    0,
+  );
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.help) return;
+  assert.equal(parsed.args.verbose, true);
+  assert.deepEqual(parsed.args.prices, [
+    { planId: "cursor-super", amount: 107.8, currency: "EUR", billing: "monthly" },
+    { planId: "claude-pro", amount: 240, currency: "USD", billing: "yearly" },
+    { planId: "cursor-super", amount: 90, currency: "EUR", billing: "monthly" },
+  ]);
+  assert.equal(parseArgs(["scan", "--price", "claude-pro=20GBP"], now, 0).ok, false);
+  assert.equal(parseArgs(["scan", "--price", "Claude=20EUR"], now, 0).ok, false);
+});
+
 test("month bounds are local and exclusive at the end", () => {
   const bounds = boundsOf("2026-10", 60);
   assert.ok(bounds);
